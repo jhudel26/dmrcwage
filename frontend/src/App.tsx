@@ -75,6 +75,13 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
 
+  // Live clock
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Listen for hash changes to navigate to admin
   useEffect(() => {
     const onHash = () => {
@@ -316,38 +323,33 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-800">
 
-      {/* ── UPDATE MODAL ─────────────────────────────────────── */}
+      {/* ── UPDATE TOAST (top-right, non-blocking) ──────────── */}
       {showUpdateModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={acknowledgeUpdates}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex items-start gap-4">
-              <div className="p-2.5 bg-blue-50 rounded-xl">
-                <TrendingUp className="w-5 h-5 text-blue-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-gray-900">Wage Rate Updates</h3>
-                <p className="text-sm text-gray-500 mt-0.5">New wage orders detected from NWPC DOLE</p>
-              </div>
-              <button onClick={acknowledgeUpdates} className="text-gray-400 hover:text-gray-600 p-1">
-                <X className="w-4 h-4" />
-              </button>
+        <div className="fixed top-16 right-4 z-50 w-80 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden animate-in slide-in-from-top-2 fade-in duration-200">
+          <div className="flex items-center justify-between px-4 py-3 bg-blue-600 text-white">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <TrendingUp className="w-4 h-4" />
+              Wage Rate Updates
             </div>
-            <div className="p-6 space-y-2 max-h-72 overflow-y-auto">
-              {updateDetails.map((item, idx) => (
-                <div key={idx} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{item.region_name}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{item.wage_order} · Eff. {item.effective_date}</div>
-                  </div>
-                  {item.amount && <div className="text-base font-bold text-blue-600">₱{item.amount}</div>}
+            <button onClick={acknowledgeUpdates} className="text-blue-200 hover:text-white p-0.5">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
+            {updateDetails.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between px-4 py-2.5">
+                <div>
+                  <div className="text-xs font-medium text-gray-900">{item.region_name}</div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">{item.wage_order} · Eff. {item.effective_date}</div>
                 </div>
-              ))}
-            </div>
-            <div className="px-6 pb-6">
-              <button onClick={acknowledgeUpdates} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition">
-                Got it
-              </button>
-            </div>
+                {item.amount && <div className="text-sm font-bold text-blue-600 ml-2">₱{item.amount}</div>}
+              </div>
+            ))}
+          </div>
+          <div className="px-4 py-3 bg-gray-50 border-t border-gray-100">
+            <button onClick={acknowledgeUpdates} className="w-full py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 transition">
+              Dismiss
+            </button>
           </div>
         </div>
       )}
@@ -465,12 +467,16 @@ export default function App() {
           </nav>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            {wageData && (
-              <div className="hidden lg:flex items-center gap-1.5 text-xs text-gray-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                Live data
-              </div>
-            )}
+            <div className="hidden lg:flex items-center gap-2 text-xs text-gray-500 font-mono bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg">
+              <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <span>
+                {now.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                {' '}
+                <span className="text-gray-700 font-semibold">
+                  {now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              </span>
+            </div>
           </div>
         </div>
       </header>
@@ -549,32 +555,50 @@ export default function App() {
               {/* Recent Updates */}
               <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5 flex flex-col">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-900">Latest Wage Orders</h3>
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Recent Wage Updates</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Sorted by effectivity date</p>
+                  </div>
                   <button onClick={() => navigate('wages')} className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
                     See all <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
-                <div className="flex-1 space-y-0 divide-y divide-gray-50">
-                  {wageData.regions.slice(0, 7).map((r, i) => {
-                    const na = r.rates.find(rt => rt.type === 'Non-Agriculture');
-                    return (
-                      <div
-                        key={i}
-                        onClick={() => setSelectedRegion(r)}
-                        className="flex items-center justify-between py-2.5 cursor-pointer hover:text-blue-700 group"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-medium text-gray-800 group-hover:text-blue-700 truncate pr-2">
-                            {r.name.replace(/\s*\(.*?\)\s*/g, '').trim() || r.name}
+                <div className="flex-1 divide-y divide-gray-50">
+                  {[...wageData.regions]
+                    .filter(r => r.dateEffective)
+                    .sort((a, b) => new Date(b.dateEffective).getTime() - new Date(a.dateEffective).getTime())
+                    .slice(0, 8)
+                    .map((r, i) => {
+                      const na = r.rates.find(rt => rt.type === 'Non-Agriculture');
+                      const isRecent = new Date(r.dateEffective) > new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => setSelectedRegion(r)}
+                          className="flex items-center justify-between py-2.5 cursor-pointer group"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-medium text-gray-800 group-hover:text-blue-700 truncate transition">
+                                {r.name.replace(/\s*\(.*?\)\s*/g, '').trim() || r.name}
+                              </span>
+                              {isRecent && (
+                                <span className="flex-shrink-0 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">NEW</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {r.dateEffective}
+                              <span className="mx-1 text-gray-200">·</span>
+                              <span className="font-mono">{r.wageOrder}</span>
+                            </div>
                           </div>
-                          <div className="text-[11px] text-gray-400 mt-0.5 font-mono">{r.wageOrder}</div>
+                          <div className="text-sm font-bold text-blue-700 flex-shrink-0 ml-2">
+                            ₱{na?.amount || na?.tranches[na.tranches.length - 1]?.amount || '—'}
+                          </div>
                         </div>
-                        <div className="text-sm font-bold text-blue-700 flex-shrink-0">
-                          ₱{na?.amount || na?.tranches[0]?.amount || '—'}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
             </div>
