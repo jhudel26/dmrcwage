@@ -1,0 +1,52 @@
+import { WageDataResponse, RateMovementsResponse } from './types';
+
+const API_BASE = '/api';
+
+export async function fetchWageData(): Promise<WageDataResponse> {
+  const res = await fetch(`${API_BASE}/wages`);
+  if (!res.ok) throw new Error('Failed to fetch wage data');
+  return res.json();
+}
+
+export async function fetchRateMovements(): Promise<RateMovementsResponse> {
+  const res = await fetch(`${API_BASE}/rate-movements`);
+  if (!res.ok) throw new Error('Failed to fetch rate movements');
+  return res.json();
+}
+
+export async function checkUpdates() {
+  const res = await fetch(`${API_BASE}/check-updates`);
+  if (!res.ok) throw new Error('Failed to check updates');
+  return res.json();
+}
+
+export async function triggerNwpcSync(token: string) {
+  const res = await fetch(`${API_BASE}/sync`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  return res.json();
+}
+
+export async function saveWageData(token: string, regions: any[]) {
+  const res = await fetch(`${API_BASE}/save-data`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ regions })
+  });
+  return res.json();
+}
+
+export async function adminLogin(username: string, password: string) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  return res.json();
+}
