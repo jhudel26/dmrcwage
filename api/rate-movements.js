@@ -5,31 +5,33 @@ module.exports = async (req, res) => {
   const pool = getPool();
 
   try {
-    // Get all wage schedules with their Non-Agriculture rate, ordered by region + date
-    const [schedules] = await pool.query(`
+    // Get all wage schedules with their effective Non-Agriculture rate
+    // Use MAX(tranche) if tranches exist, else single_amount
+    const [rows] = await pool.query(`
       SELECT
-        ws.id        AS schedule_id,
+        ws.id            AS schedule_id,
         ws.region_id,
         ws.wage_order,
         ws.date_effective,
-        r.name       AS region_name,
-        wr.sector,
+        r.name           AS region_name,
         wr.single_amount,
         wr.uses_tranches,
         wr.single_coverage,
-        -- get the highest tranche amount as the effective rate when tranches are used
-        (SELECT MAX(wt.amount) FROM wage_tranches wt WHERE wt.rate_id = wr.id) AS max_tranche
+        COALESCE(
+          (SELECT MAX(wt.amount) FROM wage_tranches wt WHERE wt.rate_id = wr.id),
+          wr.single_amount
+        )                AS effective_rate
       FROM wage_schedules ws
       JOIN regions r  ON ws.region_id = r.id
       JOIN wage_rates wr ON wr.schedule_id = ws.id AND wr.sector = 'Non-Agriculture'
-      ORDER BY ws.region_id, ws.date_effective DESC
+      ORDER BY ws.region_id, ws.date_effective DESC, ws.id DESC
     `);
 
-    // Group into { regionId -> [schedule_newest, schedule_older, ...] }
+    // Group by region_id
     const byRegion = {};
-    for (const s of schedules) {
-      if (!byRegion[s.region_id]) byRegion[s.region_id] = [];
-      byRegion[s.region_id].push(s);
+    for (const row of rows) {
+      if (!byRegion[row.region_id]) byRegion[row.region_id] = [];
+      byRegion[row.region_id].push(row);
     }
 
     const movements = [];
@@ -39,22 +41,27 @@ module.exports = async (req, res) => {
     let maxEffectiveDate = new Date('2020-01-01');
 
     for (const regionId of Object.keys(byRegion)) {
-      const list = byRegion[regionId]; // sorted newest → oldest
+      const list = byRegion[regionId]; // sorted newest → oldest by date then id
+      const currentRate = parseFloat(list[0].effective_rate) || 0;
+      if (currentRate === 0) continue;
 
-      // Need at least 2 schedules to show a movement
-      if (list.length < 2) continue;
+      // Find the first OLDER schedule whose rate is DIFFERENT from the current
+      // This skips duplicate records created for the same wage order
+      let prevRecord = null;
+      for (let i = 1; i < list.length; i++) {
+        const r = parseFloat(list[i].effective_rate) || 0;
+        if (r !== currentRate && r > 0) {
+          prevRecord = list[i];
+          break;
+        }
+      }
 
-      const curr = list[0];
-      const prev = list[1];
+      // No genuine previous rate found — skip this region
+      if (!prevRecord) continue;
 
-      // Resolve effective rate: use max_tranche if tranches exist, else single_amount
-      const currentAmount  = parseFloat(curr.max_tranche || curr.single_amount) || 0;
-      const previousAmount = parseFloat(prev.max_tranche || prev.single_amount) || 0;
-
-      if (currentAmount === 0 || previousAmount === 0) continue;
-
-      const change = parseFloat((currentAmount - previousAmount).toFixed(2));
-      const changePercent = parseFloat(((change / previousAmount) * 100).toFixed(1));
+      const previousRate = parseFloat(prevRecord.effective_rate);
+      const change = parseFloat((currentRate - previousRate).toFixed(2));
+      const changePercent = parseFloat(((change / previousRate) * 100).toFixed(1));
 
       if (change > 0) {
         totalIncreases++;
@@ -62,34 +69,34 @@ module.exports = async (req, res) => {
         regionsChangedSet.add(regionId);
       }
 
-      if (curr.date_effective) {
-        const effDate = new Date(curr.date_effective);
-        if (effDate > maxEffectiveDate && effDate <= new Date()) maxEffectiveDate = effDate;
+      const effDate = list[0].date_effective ? new Date(list[0].date_effective) : null;
+      if (effDate && effDate > maxEffectiveDate && effDate <= new Date()) {
+        maxEffectiveDate = effDate;
       }
 
       movements.push({
         regionId,
-        regionName: curr.region_name,
+        regionName: list[0].region_name,
         sector: 'Non-Agriculture',
-        coverage: curr.single_coverage || '',
-        previousAmount,
-        previousWageOrder: prev.wage_order || '—',
-        previousEffectiveDate: prev.date_effective
-          ? new Date(prev.date_effective).toISOString().split('T')[0]
-          : '',
-        currentAmount,
-        currentWageOrder: curr.wage_order,
-        currentEffectiveDate: curr.date_effective
-          ? new Date(curr.date_effective).toISOString().split('T')[0]
-          : '',
+        coverage: list[0].single_coverage || '',
+        previousAmount: previousRate,
+        previousWageOrder: prevRecord.wage_order || '—',
+        previousEffectiveDate: prevRecord.date_effective
+          ? new Date(prevRecord.date_effective).toISOString().split('T')[0]
+          : '—',
+        currentAmount: currentRate,
+        currentWageOrder: list[0].wage_order,
+        currentEffectiveDate: list[0].date_effective
+          ? new Date(list[0].date_effective).toISOString().split('T')[0]
+          : '—',
         change,
         changePercent,
         status: change > 0 ? 'Increased' : change < 0 ? 'Decreased' : 'Unchanged'
       });
     }
 
-    // Sort movements: largest increase first
-    movements.sort((a, b) => b.change - a.change);
+    // Sort: largest absolute change first
+    movements.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
 
     const avgIncrease = totalIncreases > 0
       ? parseFloat((sumIncreasePercent / totalIncreases).toFixed(1))
