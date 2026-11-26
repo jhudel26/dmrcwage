@@ -30,18 +30,6 @@ export async function triggerNwpcSync(token: string) {
   return res.json();
 }
 
-export async function saveWageData(token: string, regions: any[]) {
-  const res = await fetch(`${API_BASE}/save-data`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify({ regions })
-  });
-  return res.json();
-}
-
 export async function adminLogin(username: string, password: string) {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',

@@ -8,7 +8,8 @@ module.exports = async (req, res) => {
     const [events] = await pool.query('SELECT * FROM update_events ORDER BY id DESC LIMIT 5');
     const [latestSchedules] = await pool.query(`
       SELECT ws.wage_order, ws.date_effective, r.name as region_name,
-             wr.single_amount, wr.single_coverage
+             wr.single_amount, wr.single_coverage,
+             (SELECT MAX(wt.amount) FROM wage_tranches wt WHERE wt.rate_id = wr.id) AS max_tranche
       FROM wage_schedules ws
       JOIN regions r ON ws.region_id = r.id
       JOIN wage_rates wr ON wr.schedule_id = ws.id AND wr.sector = 'Non-Agriculture'
@@ -21,9 +22,9 @@ module.exports = async (req, res) => {
       has_changes: events.length > 0,
       recent_changes: latestSchedules.map(s => ({
         region_name: s.region_name,
-        wage_order: s.wage_order,
-        effective_date: s.date_effective ? s.date_effective.toISOString().split('T')[0] : '',
-        amount: s.single_amount,
+        wage_order: (s.wage_order || '').replace(/\s+[a-z]\/$/i, '').trim(),
+        effective_date: s.date_effective ? new Date(s.date_effective).toISOString().split('T')[0] : '',
+        amount: parseFloat(s.max_tranche || s.single_amount) || null,
         coverage: s.single_coverage
       }))
     });

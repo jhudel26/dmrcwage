@@ -104,7 +104,9 @@ async function runSync(pool) {
 
     const bodyText = $.text();
     const woMatch = bodyText.match(/Wage\s+Order\s+No\.?\s*([A-Za-z0-9\s()/-]+?)(?:\s+[a-z]\/|\s*\(Effective)/i);
-    let wageOrder = woMatch ? woMatch[1].replace(/\s+/g, ' ').trim() : null;
+    let wageOrder = woMatch
+      ? woMatch[1].replace(/\s+[a-z]\/$/i, '').replace(/\s+/g, ' ').trim()
+      : null;
     const dateMatch = bodyText.match(/Effective:?\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})/i);
     let dateEffective = dateMatch ? parseIsoDate(dateMatch[1]) : null;
 
@@ -132,12 +134,15 @@ async function runSync(pool) {
     const [dbRegions] = await pool.query('SELECT * FROM regions WHERE nwpc_slug = ?', [slug]);
     if (!dbRegions.length) { log.push({ slug, action: 'skipped', reason: 'no_region' }); continue; }
 
+    const isMultiRegionPage = dbRegions.length > 1;
     for (const reg of dbRegions) {
       const fb = FALLBACKS[reg.id] || {};
-      const nonAgriAmt = parsedNonAgri || fb.nonAgri;
-      const agriAmt = parsedAgri || fb.agri || nonAgriAmt;
+      // For multi-subregion pages (e.g. Region IV-A, VII, BARMM, Region III),
+      // prefer subregion-specific fallback rates so subregions don't overwrite each other.
+      const nonAgriAmt = isMultiRegionPage ? (fb.nonAgri || parsedNonAgri) : (parsedNonAgri || fb.nonAgri);
+      const agriAmt = isMultiRegionPage ? (fb.agri || parsedAgri || nonAgriAmt) : (parsedAgri || fb.agri || nonAgriAmt);
       const effDate = dateEffective || fb.date || '2026-01-01';
-      const wo = wageOrder || fb.wo || `${slug.toUpperCase()}-CURRENT`;
+      const wo = (isMultiRegionPage && fb.wo) ? fb.wo : (wageOrder || fb.wo || `${slug.toUpperCase()}-CURRENT`);
 
       await pool.query(
         `INSERT INTO wage_schedules (region_id, wage_order, date_effective, pdf_url, source)
@@ -178,10 +183,12 @@ async function runSync(pool) {
     );
   }
 
-  await pool.query(
-    `INSERT INTO update_events (summary, source) VALUES (?, 'nwpc_cron')`,
-    [`NWPC sync: ${synced} updated, ${skipped} unchanged`]
-  );
+  if (synced > 0) {
+    await pool.query(
+      `INSERT INTO update_events (summary, source) VALUES (?, 'nwpc_cron')`,
+      [`NWPC sync: ${synced} updated, ${skipped} unchanged`]
+    );
+  }
 
   return { synced, skipped, log };
 }

@@ -99,20 +99,22 @@ module.exports = async (req, res) => {
     }
 
     // Build region map
+    const cleanOrder = (wo) => (wo || 'N/A').replace(/\s+[a-z]\/$/i, '').trim();
     const regionMap = new Map();
     for (const row of regions) {
+      const cleanedWo = cleanOrder(row.wage_order);
       if (!regionMap.has(row.id)) {
         regionMap.set(row.id, {
           id: row.id, name: row.name, notes: row.notes || '',
-          wageOrder: row.wage_order || 'N/A',
+          wageOrder: cleanedWo,
           dateEffective: row.date_effective ? row.date_effective.toISOString().split('T')[0] : '',
           pdfUrl: row.pdf_url || null, rates: [], wageSchedules: []
         });
       }
       const reg = regionMap.get(row.id);
-      if (row.wage_order && !reg.wageSchedules.some(s => s.wageOrder === row.wage_order)) {
+      if (row.wage_order && !reg.wageSchedules.some(s => s.wageOrder === cleanedWo)) {
         reg.wageSchedules.push({
-          id: row.schedule_id, wageOrder: row.wage_order,
+          id: row.schedule_id, wageOrder: cleanedWo,
           dateEffective: row.date_effective ? row.date_effective.toISOString().split('T')[0] : '',
           pdfUrl: row.pdf_url || null, rates: []
         });

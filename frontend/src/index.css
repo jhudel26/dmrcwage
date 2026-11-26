@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 * {
   -webkit-font-smoothing: antialiased;
@@ -14,7 +14,6 @@ body {
   background-color: #f9fafb;
 }
 
-/* Smooth scrolling on modals */
 .overflow-y-auto {
   scrollbar-width: thin;
   scrollbar-color: #e5e7eb transparent;
@@ -27,19 +26,16 @@ body {
   border-radius: 9999px;
 }
 
-/* Table horizontal scroll */
 .overflow-x-auto {
   scrollbar-width: thin;
   scrollbar-color: #e5e7eb transparent;
 }
 
-/* Smooth focus rings */
 input:focus, select:focus, button:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
 }
 
-/* Prevent text selection on interactive elements */
 nav button, .cursor-pointer {
   user-select: none;
 }
