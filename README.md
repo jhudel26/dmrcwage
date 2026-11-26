@@ -53,11 +53,7 @@ npm run dev:frontend
 
 ---
 
-## 🔐 Admin Credentials
 
-- **URL**: Click the **Admin** tab on the navigation bar
-- **Username**: `admin`
-- **Password**: `jayjayjhudel`
 
 ---
 
