@@ -2,22 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #f9fafb;
 }
 
-.perspective-1000 {
-  perspective: 1000px;
+/* Smooth scrolling on modals */
+.overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
+}
+.overflow-y-auto::-webkit-scrollbar {
+  width: 4px;
+}
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background-color: #e5e7eb;
+  border-radius: 9999px;
 }
 
-.transform-style-3d {
-  transform-style: preserve-3d;
+/* Table horizontal scroll */
+.overflow-x-auto {
+  scrollbar-width: thin;
+  scrollbar-color: #e5e7eb transparent;
 }
 
-.backface-hidden {
-  backface-visibility: hidden;
+/* Smooth focus rings */
+input:focus, select:focus, button:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
 }
 
-.rotate-y-180 {
-  transform: rotateY(180deg);
+/* Prevent text selection on interactive elements */
+nav button, .cursor-pointer {
+  user-select: none;
 }

@@ -17,85 +17,86 @@ import {
   History,
   ShieldCheck,
   Search,
-  Filter,
   Download,
-  Upload,
   RefreshCw,
   X,
   ExternalLink,
-  ChevronRight,
   ArrowRight,
   CheckCircle2,
   Layers,
   FileSpreadsheet,
   FileText,
   LogOut,
-  Edit,
-  AlertCircle
+  AlertCircle,
+  MapPin,
+  ArrowUpRight,
+  ChevronDown,
+  BarChart2,
+  Clock,
+  Banknote
 } from 'lucide-react';
 import { Region, WageDataResponse, RateMovementsResponse } from './types';
 import { fetchWageData, fetchRateMovements, checkUpdates, adminLogin, triggerNwpcSync, saveWageData } from './api';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+
+// Admin route is accessible via URL hash #/admin — not shown in the nav
+const isAdminRoute = () => window.location.hash === '#/admin';
 
 export default function App() {
-  // Preloader State
   const [loading, setLoading] = useState(true);
   const [loadStep, setLoadStep] = useState(0);
-  const [loadProgress, setLoadProgress] = useState(15);
+  const [loadProgress, setLoadProgress] = useState(10);
 
-  // Core Data States
   const [wageData, setWageData] = useState<WageDataResponse | null>(null);
   const [movementsData, setMovementsData] = useState<RateMovementsResponse | null>(null);
-  const [currentView, setCurrentView] = useState<'dashboard' | 'wages' | 'compare' | 'movements' | 'admin'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'wages' | 'compare' | 'movements' | 'admin'>(
+    isAdminRoute() ? 'admin' : 'dashboard'
+  );
 
-  // Search & Filter States
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOption, setSortOption] = useState<'az' | 'za' | 'highest' | 'lowest'>('az');
   const [sectorFilter, setSectorFilter] = useState<'all' | 'Non-Agriculture' | 'Agriculture'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  // Modal & Selection States
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updateDetails, setUpdateDetails] = useState<any[]>([]);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // Compare Tool States
   const [compareRegion1, setCompareRegion1] = useState<string>('ncr');
   const [compareRegion2, setCompareRegion2] = useState<string>('region4a');
 
-  // Admin States
   const [adminToken, setAdminToken] = useState<string | null>(localStorage.getItem('dmrc-admin-token'));
   const [adminUser, setAdminUser] = useState<string | null>(localStorage.getItem('dmrc-admin-user'));
-  const [loginUsername, setLoginUsername] = useState('admin');
+  const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
-  const [editingRegion, setEditingRegion] = useState<Region | null>(null);
 
-  // Preloader Simulation & Initial Load
+  // Listen for hash changes to navigate to admin
   useEffect(() => {
-    const runLoader = async () => {
-      setLoadStep(1); setLoadProgress(30);
+    const onHash = () => {
+      if (window.location.hash === '#/admin') setCurrentView('admin');
+      else if (currentView === 'admin') setCurrentView('dashboard');
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [currentView]);
+
+  useEffect(() => {
+    const run = async () => {
+      setLoadStep(1); setLoadProgress(25);
       try {
         const data = await fetchWageData();
         setWageData(data);
-        setLoadStep(2); setLoadProgress(70);
+        setLoadStep(2); setLoadProgress(60);
 
         const movements = await fetchRateMovements();
         setMovementsData(movements);
-        setLoadStep(3); setLoadProgress(90);
+        setLoadStep(3); setLoadProgress(85);
 
-        // Check for updates
         const updateCheck = await checkUpdates();
         const lastSeen = localStorage.getItem('lastSeenRateUpdate');
         if (updateCheck.has_changes && updateCheck.last_updated !== lastSeen) {
@@ -104,28 +105,28 @@ export default function App() {
         }
 
         setLoadStep(4); setLoadProgress(100);
-        setTimeout(() => setLoading(false), 400);
-      } catch (err) {
-        console.error('Initialization error:', err);
+        setTimeout(() => setLoading(false), 350);
+      } catch {
         setLoading(false);
       }
     };
-
-    runLoader();
+    run();
   }, []);
 
   const acknowledgeUpdates = () => {
-    if (wageData) {
-      localStorage.setItem('lastSeenRateUpdate', wageData.lastUpdated);
-    }
+    if (wageData) localStorage.setItem('lastSeenRateUpdate', wageData.lastUpdated);
     setShowUpdateModal(false);
   };
 
-  // Filtered & Sorted Regions
+  const navigate = (view: typeof currentView) => {
+    setCurrentView(view);
+    if (view === 'admin') window.location.hash = '#/admin';
+    else window.location.hash = '';
+  };
+
   const filteredRegions = useMemo(() => {
     if (!wageData) return [];
     let list = [...wageData.regions];
-
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       list = list.filter(r =>
@@ -134,76 +135,63 @@ export default function App() {
         r.wageOrder.toLowerCase().includes(q)
       );
     }
-
     if (sectorFilter !== 'all') {
       list = list.filter(r => r.rates.some(rt => rt.type === sectorFilter));
     }
-
     list.sort((a, b) => {
-      const getNonAgriWage = (reg: Region) => {
-        const rate = reg.rates.find(rt => rt.type === 'Non-Agriculture');
-        return rate ? (rate.amount || (rate.tranches[0]?.amount) || 0) : 0;
+      const w = (reg: Region) => {
+        const rt = reg.rates.find(r => r.type === 'Non-Agriculture');
+        return rt ? (rt.amount || rt.tranches[0]?.amount || 0) : 0;
       };
-
       if (sortOption === 'az') return a.name.localeCompare(b.name);
       if (sortOption === 'za') return b.name.localeCompare(a.name);
-      if (sortOption === 'highest') return getNonAgriWage(b) - getNonAgriWage(a);
-      if (sortOption === 'lowest') return getNonAgriWage(a) - getNonAgriWage(b);
+      if (sortOption === 'highest') return w(b) - w(a);
+      if (sortOption === 'lowest') return w(a) - w(b);
       return 0;
     });
-
     return list;
   }, [wageData, searchTerm, sortOption, sectorFilter]);
 
-  // Chart Data: Top 10 Regions by Wage
   const chartData = useMemo(() => {
     if (!wageData) return { labels: [], datasets: [] };
     const sorted = [...wageData.regions]
       .map(r => {
-        const rate = r.rates.find(rt => rt.type === 'Non-Agriculture');
-        const wage = rate ? (rate.amount || rate.tranches[0]?.amount || 0) : 0;
-        return { name: r.name.replace(/\(.*\)/, '').trim(), wage };
+        const rt = r.rates.find(x => x.type === 'Non-Agriculture');
+        const wage = rt ? (rt.amount || rt.tranches[0]?.amount || 0) : 0;
+        return { name: r.name.replace(/\s*\(.*?\)\s*/g, '').trim() || r.name, wage };
       })
       .sort((a, b) => b.wage - a.wage)
       .slice(0, 10);
-
     return {
       labels: sorted.map(s => s.name),
-      datasets: [
-        {
-          label: 'Daily Minimum Wage (₱)',
-          data: sorted.map(s => s.wage),
-          backgroundColor: 'rgba(37, 99, 235, 0.85)',
-          borderColor: '#1d4ed8',
-          borderWidth: 1,
-          borderRadius: 6
-        }
-      ]
+      datasets: [{
+        label: 'Daily Minimum Wage (₱)',
+        data: sorted.map(s => s.wage),
+        backgroundColor: [
+          '#3b82f6','#6366f1','#8b5cf6','#ec4899','#f59e0b',
+          '#10b981','#06b6d4','#f97316','#84cc16','#14b8a6'
+        ],
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
     };
   }, [wageData]);
 
-  // Comparison Calculations
   const comparisonResults = useMemo(() => {
     if (!wageData) return null;
     const r1 = wageData.regions.find(r => r.id === compareRegion1);
     const r2 = wageData.regions.find(r => r.id === compareRegion2);
     if (!r1 || !r2) return null;
-
-    const getWage = (r: Region) => {
-      const rt = r.rates.find(rate => rate.type === 'Non-Agriculture');
+    const getW = (r: Region) => {
+      const rt = r.rates.find(x => x.type === 'Non-Agriculture');
       return rt ? (rt.amount || rt.tranches[0]?.amount || 0) : 0;
     };
-
-    const w1 = getWage(r1);
-    const w2 = getWage(r2);
+    const w1 = getW(r1), w2 = getW(r2);
     const diff = Math.abs(w1 - w2);
-    const minW = Math.min(w1, w2) || 1;
-    const variance = ((diff / minW) * 100).toFixed(1);
-
+    const variance = ((diff / (Math.min(w1, w2) || 1)) * 100).toFixed(1);
     return { r1, r2, w1, w2, diff, variance };
   }, [wageData, compareRegion1, compareRegion2]);
 
-  // Admin Handlers
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -215,10 +203,10 @@ export default function App() {
         localStorage.setItem('dmrc-admin-token', res.token);
         localStorage.setItem('dmrc-admin-user', res.user.username);
       } else {
-        setLoginError(res.message || 'Invalid username or password');
+        setLoginError(res.message || 'Invalid credentials.');
       }
     } catch (err: any) {
-      setLoginError(err.message || 'Login failed');
+      setLoginError(err.message || 'Login failed.');
     }
   };
 
@@ -232,15 +220,13 @@ export default function App() {
   const handleManualSync = async () => {
     if (!adminToken) return;
     setIsSyncing(true);
-    setSyncMessage('Fetching and synchronizing latest wage orders from NWPC DOLE...');
+    setSyncMessage('Fetching latest wage orders from NWPC DOLE...');
     try {
       const res = await triggerNwpcSync(adminToken);
       if (res.success) {
-        setSyncMessage('NWPC Synchronization completed successfully!');
-        const fresh = await fetchWageData();
-        setWageData(fresh);
-        const freshMov = await fetchRateMovements();
-        setMovementsData(freshMov);
+        setSyncMessage('Sync completed. Data refreshed.');
+        setWageData(await fetchWageData());
+        setMovementsData(await fetchRateMovements());
       } else {
         setSyncMessage(`Sync failed: ${res.error}`);
       }
@@ -251,201 +237,161 @@ export default function App() {
     }
   };
 
-  // Export Handlers
   const handleExportJSON = () => {
     if (!wageData) return;
     const blob = new Blob([JSON.stringify(wageData.regions, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dmrc-wage-rates-${new Date().toISOString().split('T')[0]}.json`;
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `wage-rates-${new Date().toISOString().slice(0,10)}.json` });
     a.click();
   };
 
   const handleExportExcel = () => {
     if (!wageData) return;
     const rows = wageData.regions.map(r => {
-      const nonAgri = r.rates.find(rt => rt.type === 'Non-Agriculture');
-      const agri = r.rates.find(rt => rt.type === 'Agriculture');
-      return {
-        'Region ID': r.id,
-        'Region Name': r.name,
-        'Wage Order': r.wageOrder,
-        'Date Effective': r.dateEffective,
-        'Non-Agriculture Rate (₱)': nonAgri?.amount || nonAgri?.tranches[0]?.amount || '',
-        'Non-Agriculture Coverage': nonAgri?.coverage || '',
-        'Agriculture Rate (₱)': agri?.amount || agri?.tranches[0]?.amount || '',
-        'Agriculture Coverage': agri?.coverage || '',
-        'Notes': r.notes
-      };
+      const na = r.rates.find(rt => rt.type === 'Non-Agriculture');
+      const ag = r.rates.find(rt => rt.type === 'Agriculture');
+      return { 'Region': r.name, 'Wage Order': r.wageOrder, 'Date Effective': r.dateEffective, 'Non-Agriculture (₱)': na?.amount || na?.tranches[0]?.amount || '', 'Agriculture (₱)': ag?.amount || ag?.tranches[0]?.amount || '', 'Notes': r.notes };
     });
-
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Wage Rates');
-    XLSX.writeFile(workbook, `dmrc-wage-rates-${new Date().toISOString().split('T')[0]}.xlsx`);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Wage Rates');
+    XLSX.writeFile(wb, `wage-rates-${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   const handleExportCSV = () => {
     if (!wageData) return;
-    const rows = wageData.regions.map(r => {
-      const nonAgri = r.rates.find(rt => rt.type === 'Non-Agriculture');
-      const agri = r.rates.find(rt => rt.type === 'Agriculture');
-      return {
-        id: r.id,
-        name: `"${r.name.replace(/"/g, '""')}"`,
-        wageOrder: r.wageOrder,
-        dateEffective: r.dateEffective,
-        nonAgri: nonAgri?.amount || nonAgri?.tranches[0]?.amount || '',
-        agri: agri?.amount || agri?.tranches[0]?.amount || '',
-        notes: `"${r.notes.replace(/"/g, '""')}"`
-      };
+    let csv = 'Region,Wage Order,Date Effective,Non-Agriculture,Agriculture,Notes\n';
+    wageData.regions.forEach(r => {
+      const na = r.rates.find(rt => rt.type === 'Non-Agriculture');
+      const ag = r.rates.find(rt => rt.type === 'Agriculture');
+      csv += `"${r.name}","${r.wageOrder}","${r.dateEffective}","${na?.amount || na?.tranches[0]?.amount || ''}","${ag?.amount || ag?.tranches[0]?.amount || ''}","${r.notes}"\n`;
     });
-
-    let csv = 'Region ID,Region Name,Wage Order,Date Effective,Non-Agriculture Rate,Agriculture Rate,Notes\n';
-    rows.forEach(r => {
-      csv += `${r.id},${r.name},${r.wageOrder},${r.dateEffective},${r.nonAgri},${r.agri},${r.notes}\n`;
-    });
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dmrc-wage-rates-${new Date().toISOString().split('T')[0]}.csv`;
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })), download: `wage-rates-${new Date().toISOString().slice(0,10)}.csv` });
     a.click();
   };
 
-  // Preloader Screen
+  // ── LOADING SCREEN ────────────────────────────────────────────────────
   if (loading) {
+    const steps = ['Connecting to database', 'Loading wage orders', 'Verifying tranche data', 'Preparing dashboard'];
     return (
-      <div className="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center text-white z-50 p-6">
-        <div className="w-20 h-20 mb-6 relative">
-          <div className="absolute inset-0 border-4 border-blue-500/30 rounded-full animate-ping"></div>
-          <div className="w-full h-full bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/50">
-            <Building2 className="w-10 h-10 text-white" />
+      <div className="fixed inset-0 bg-gray-950 flex flex-col items-center justify-center text-white z-50 p-6">
+        <div className="mb-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 shadow-xl shadow-blue-900/50 mb-5">
+            <Building2 className="w-8 h-8 text-white" />
           </div>
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight mb-1">DMRC Wage Monitoring</h1>
-        <p className="text-sm text-slate-400 mb-8">Connecting to Alwaysdata & Synchronizing NWPC Rates</p>
-
-        <div className="w-full max-w-md bg-slate-800 rounded-full h-2.5 mb-6 overflow-hidden border border-slate-700">
-          <div
-            className="bg-blue-500 h-2.5 rounded-full transition-all duration-300"
-            style={{ width: `${loadProgress}%` }}
-          ></div>
+          <h1 className="text-xl font-bold tracking-tight text-white">DMRC Wage Monitoring</h1>
+          <p className="text-sm text-gray-400 mt-1">Philippine Regional Minimum Wage System</p>
         </div>
 
-        <div className="space-y-2 text-sm text-slate-400 max-w-sm w-full">
-          <div className="flex items-center justify-between">
-            <span>Loading system configuration</span>
-            {loadStep >= 1 && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+        <div className="w-full max-w-xs mb-6">
+          <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className="h-1 bg-blue-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${loadProgress}%` }}
+            />
           </div>
-          <div className="flex items-center justify-between">
-            <span>Fetching wage database from Alwaysdata</span>
-            {loadStep >= 2 && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Validating regional wage orders & tranches</span>
-            {loadStep >= 3 && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Finalizing dashboard setup</span>
-            {loadStep >= 4 && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-          </div>
+        </div>
+
+        <div className="space-y-2.5 w-full max-w-xs">
+          {steps.map((s, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${
+                loadStep > i ? 'bg-blue-600' : loadStep === i ? 'bg-blue-600/40 animate-pulse' : 'bg-gray-800'
+              }`}>
+                {loadStep > i && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+              </div>
+              <span className={`text-sm transition-colors ${loadStep > i ? 'text-gray-300' : loadStep === i ? 'text-white' : 'text-gray-600'}`}>{s}</span>
+            </div>
+          ))}
         </div>
       </div>
     );
   }
 
+  const navLinks = [
+    { view: 'dashboard', label: 'Dashboard', icon: BarChart2 },
+    { view: 'wages',     label: 'Wage Rates', icon: Layers },
+    { view: 'compare',   label: 'Compare', icon: Scale },
+    { view: 'movements', label: 'Movements', icon: TrendingUp },
+  ] as const;
+
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
-      {/* Rate Change Notification Modal */}
+    <div className="min-h-screen flex flex-col bg-gray-50 text-gray-800">
+
+      {/* ── UPDATE MODAL ─────────────────────────────────────── */}
       {showUpdateModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 animate-in fade-in zoom-in duration-200">
-            <div className="bg-blue-600 p-5 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/40 rounded-xl">
-                  <TrendingUp className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-lg leading-snug">New Wage Rate Updates</h3>
-                  <p className="text-xs text-blue-100">Automatically synced from NWPC - DOLE</p>
-                </div>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={acknowledgeUpdates}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex items-start gap-4">
+              <div className="p-2.5 bg-blue-50 rounded-xl">
+                <TrendingUp className="w-5 h-5 text-blue-600" />
               </div>
-              <button onClick={acknowledgeUpdates} className="text-blue-100 hover:text-white">
-                <X className="w-5 h-5" />
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900">Wage Rate Updates</h3>
+                <p className="text-sm text-gray-500 mt-0.5">New wage orders detected from NWPC DOLE</p>
+              </div>
+              <button onClick={acknowledgeUpdates} className="text-gray-400 hover:text-gray-600 p-1">
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-              <p className="text-sm text-slate-600">
-                The system has detected new or updated minimum wage orders issued by Regional Boards:
-              </p>
-              <div className="space-y-3">
-                {updateDetails.map((item, idx) => (
-                  <div key={idx} className="p-3 bg-blue-50/70 rounded-xl border border-blue-100 flex items-start justify-between">
-                    <div>
-                      <div className="font-semibold text-sm text-blue-950">{item.region_name}</div>
-                      <div className="text-xs text-slate-500">Order: <span className="font-mono font-medium text-slate-700">{item.wage_order}</span></div>
-                      <div className="text-xs text-slate-500">Effective: {item.effective_date}</div>
-                    </div>
-                    {item.amount && (
-                      <div className="text-right">
-                        <div className="text-base font-bold text-blue-700">₱{item.amount}</div>
-                        <div className="text-[10px] text-slate-500 uppercase">Non-Agri</div>
-                      </div>
-                    )}
+            <div className="p-6 space-y-2 max-h-72 overflow-y-auto">
+              {updateDetails.map((item, idx) => (
+                <div key={idx} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">{item.region_name}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{item.wage_order} · Eff. {item.effective_date}</div>
                   </div>
-                ))}
-              </div>
+                  {item.amount && <div className="text-base font-bold text-blue-600">₱{item.amount}</div>}
+                </div>
+              ))}
             </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={acknowledgeUpdates}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm transition"
-              >
-                Acknowledge & Dismiss
+            <div className="px-6 pb-6">
+              <button onClick={acknowledgeUpdates} className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition">
+                Got it
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 3D Flip / Detail Card Modal */}
+      {/* ── REGION DETAIL MODAL ───────────────────────────────── */}
       {selectedRegion && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-200">
-            <div className="bg-slate-900 p-6 text-white flex items-start justify-between">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setSelectedRegion(null)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="p-5 sm:p-6 border-b border-gray-100 flex items-start justify-between gap-4">
               <div>
-                <span className="inline-block px-2.5 py-1 bg-blue-600/30 text-blue-400 text-xs font-semibold rounded-lg mb-2">
+                <span className="inline-block px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg font-mono mb-2">
                   {selectedRegion.wageOrder}
                 </span>
-                <h3 className="font-bold text-xl leading-snug">{selectedRegion.name}</h3>
-                <p className="text-xs text-slate-400 mt-1">Effective Date: {selectedRegion.dateEffective || 'Published'}</p>
+                <h3 className="font-bold text-lg text-gray-900 leading-snug">{selectedRegion.name}</h3>
+                {selectedRegion.dateEffective && (
+                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />
+                    Effective {selectedRegion.dateEffective}
+                  </p>
+                )}
               </div>
-              <button onClick={() => setSelectedRegion(null)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
+              <button onClick={() => setSelectedRegion(null)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition">
+                <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-              {/* Sector Rates Breakdown */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {selectedRegion.rates.map((rate, rIdx) => (
-                  <div key={rIdx} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">{rate.type}</div>
-                    <div className="text-2xl font-black text-slate-900">
-                      ₱{rate.amount || rate.tranches[0]?.amount || 'TBA'}
-                    </div>
-                    <div className="text-xs text-slate-600 mt-2 line-clamp-2">{rate.coverage}</div>
 
-                    {/* Tranche schedule if multi-tranche */}
-                    {rate.tranches && rate.tranches.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-slate-200 space-y-1.5">
-                        <div className="text-[11px] font-semibold text-slate-700">Tranche Schedule:</div>
-                        {rate.tranches.map((tr, tIdx) => (
-                          <div key={tIdx} className="flex justify-between text-xs">
-                            <span className="text-slate-500">Tranche {tr.order} ({tr.effectiveDate}):</span>
-                            <span className="font-bold text-slate-800">₱{tr.amount}</span>
+            <div className="p-5 sm:p-6 space-y-4 max-h-[65vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3">
+                {selectedRegion.rates.map((rate, i) => (
+                  <div key={i} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                    <div className="text-xs font-medium text-gray-500 mb-2">{rate.type}</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      ₱{rate.amount || rate.tranches[0]?.amount || '—'}
+                    </div>
+                    {rate.tranches.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-200 space-y-1.5">
+                        <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Tranche Schedule</div>
+                        {rate.tranches.map((tr, ti) => (
+                          <div key={ti} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-400">
+                              <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 ${tr.status === 'upcoming' ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                              {tr.effectiveDate}
+                            </span>
+                            <span className="font-semibold text-gray-700">₱{tr.amount}</span>
                           </div>
                         ))}
                       </div>
@@ -454,37 +400,33 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Coverage Area Notes */}
               {selectedRegion.notes && (
-                <div className="p-4 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-slate-700">
-                  <div className="font-bold text-blue-900 mb-1">Coverage & Jurisdictions:</div>
-                  <p className="leading-relaxed">{selectedRegion.notes}</p>
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    <MapPin className="w-3.5 h-3.5" /> Coverage Area
+                  </div>
+                  <p className="text-sm text-gray-700 leading-relaxed">{selectedRegion.notes}</p>
                 </div>
               )}
 
-              {/* NWPC Official PDF Download */}
               {selectedRegion.pdfUrl && (
-                <div className="flex justify-between items-center p-3.5 bg-slate-100 rounded-xl">
-                  <div className="text-xs font-medium text-slate-700 flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-blue-600" />
-                    Official NWPC Wage Order PDF
+                <a
+                  href={selectedRegion.pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-blue-50 border border-gray-100 hover:border-blue-200 rounded-xl transition group"
+                >
+                  <div className="flex items-center gap-2.5 text-sm text-gray-700 group-hover:text-blue-700">
+                    <FileText className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                    Official NWPC Wage Order
                   </div>
-                  <a
-                    href={selectedRegion.pdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-                  >
-                    Download <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
+                  <ExternalLink className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                </a>
               )}
             </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => setSelectedRegion(null)}
-                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold rounded-xl transition"
-              >
+
+            <div className="px-5 sm:px-6 pb-5 sm:pb-6 pt-3">
+              <button onClick={() => setSelectedRegion(null)} className="w-full py-2.5 text-sm font-medium text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-xl transition">
                 Close
               </button>
             </div>
@@ -492,308 +434,243 @@ export default function App() {
         </div>
       )}
 
-      {/* Top Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-              <Building2 className="w-6 h-6" />
+      {/* ── HEADER ───────────────────────────────────────────── */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+              <Building2 className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                DMRC Regional Minimum Wage Monitoring
-              </h1>
-              <p className="text-[11px] text-slate-500 flex items-center gap-2">
-                <span>Based on NWPC - DOLE Wage Orders</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
-                <span className="text-emerald-600 font-medium">Live Alwaysdata DB</span>
-              </p>
+            <div className="hidden sm:block">
+              <span className="text-sm font-bold text-gray-900">DMRC Wage Monitor</span>
+              <span className="ml-2 text-xs text-gray-400 hidden md:inline">Philippine Minimum Wage Rates</span>
             </div>
           </div>
 
-          {/* Navigation Tabs */}
-          <nav className="flex items-center gap-1 sm:gap-2">
-            <button
-              onClick={() => setCurrentView('dashboard')}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-                currentView === 'dashboard'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <TrendingUp className="w-4 h-4" />
-              <span className="hidden sm:inline">Dashboard</span>
-            </button>
-            <button
-              onClick={() => setCurrentView('wages')}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-                currentView === 'wages'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              <span>Wage Rates</span>
-            </button>
-            <button
-              onClick={() => setCurrentView('compare')}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-                currentView === 'compare'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Scale className="w-4 h-4" />
-              <span className="hidden sm:inline">Compare</span>
-            </button>
-            <button
-              onClick={() => setCurrentView('movements')}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-                currentView === 'movements'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <History className="w-4 h-4" />
-              <span className="hidden sm:inline">Rate Movements</span>
-            </button>
-            <button
-              onClick={() => setCurrentView('admin')}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
-                currentView === 'admin'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Admin</span>
-            </button>
+          <nav className="flex items-center gap-0.5">
+            {navLinks.map(({ view, label, icon: Icon }) => (
+              <button
+                key={view}
+                onClick={() => navigate(view)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
+                  currentView === view
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
           </nav>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {wageData && (
+              <div className="hidden lg:flex items-center gap-1.5 text-xs text-gray-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                Live data
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Dismissible Banner */}
-        {!bannerDismissed && (
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-4 text-white shadow-md flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-                <AlertCircle className="w-5 h-5 text-white" />
-              </div>
-              <div className="text-xs sm:text-sm">
-                <span className="font-bold">Automated Synchronization Active: </span>
-                <span>Regional statutory minimum wage orders are continuously pulled directly from NWPC DOLE into Alwaysdata.</span>
-              </div>
-            </div>
-            <button onClick={() => setBannerDismissed(true)} className="text-white/80 hover:text-white p-1">
+      {/* ── MAIN ─────────────────────────────────────────────── */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+
+        {/* Info Banner */}
+        {!bannerDismissed && currentView !== 'admin' && (
+          <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800">
+            <AlertCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+            <span className="flex-1">Wage data is automatically synchronized every 6 hours from <strong>NWPC – DOLE</strong>. All rates reflect the latest issued wage orders per region.</span>
+            <button onClick={() => setBannerDismissed(true)} className="text-blue-400 hover:text-blue-600 flex-shrink-0 p-0.5">
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* -------------------------------------------------------------------------------- */}
-        {/* VIEW 1: DASHBOARD */}
-        {/* -------------------------------------------------------------------------------- */}
+        {/* ── VIEW: DASHBOARD ───────────────────────────────── */}
         {currentView === 'dashboard' && wageData && (
           <div className="space-y-6">
-            {/* 4 Metric Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Regions</div>
-                <div className="text-3xl font-black text-slate-900 mt-2">{wageData.metrics.totalRegions}</div>
-                <div className="text-xs text-slate-500 mt-1">Philippine Administrative Zones</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Highest Wage</div>
-                <div className="text-3xl font-black text-blue-600 mt-2">₱{wageData.metrics.highestWage}</div>
-                <div className="text-xs text-slate-500 mt-1">NCR (Non-Agriculture)</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Average Wage</div>
-                <div className="text-3xl font-black text-indigo-600 mt-2">₱{wageData.metrics.averageWage}</div>
-                <div className="text-xs text-slate-500 mt-1">National Non-Agri Mean</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Updated This Year</div>
-                <div className="text-3xl font-black text-emerald-600 mt-2">{wageData.metrics.updatedThisYear}</div>
-                <div className="text-xs text-slate-500 mt-1">Active Wage Orders</div>
-              </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Overview</h2>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Last updated {new Date(wageData.lastUpdated).toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </p>
             </div>
 
-            {/* Chart + Recent Updates */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Stat Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: 'Regions Covered', value: wageData.metrics.totalRegions, sub: 'Administrative zones', color: 'text-gray-900', icon: MapPin },
+                { label: 'Highest Wage', value: `₱${wageData.metrics.highestWage}`, sub: 'NCR Non-Agriculture', color: 'text-blue-700', icon: ArrowUpRight },
+                { label: 'National Average', value: `₱${wageData.metrics.averageWage}`, sub: 'Non-Agriculture mean', color: 'text-indigo-700', icon: BarChart2 },
+                { label: 'Updated This Year', value: wageData.metrics.updatedThisYear, sub: 'Active wage orders', color: 'text-emerald-700', icon: CheckCircle2 },
+              ].map((card, i) => (
+                <div key={i} className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-medium text-gray-500">{card.label}</span>
+                    <card.icon className={`w-4 h-4 ${card.color} opacity-60`} />
+                  </div>
+                  <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
+                  <div className="text-xs text-gray-400 mt-1">{card.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
               {/* Bar Chart */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-900 mb-4 text-base">Top 10 Regions by Minimum Wage</h3>
-                <div className="h-72">
+              <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-5">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Top 10 Regions by Minimum Wage</h3>
+                <p className="text-xs text-gray-400 mb-5">Non-agriculture daily rate (₱)</p>
+                <div className="h-64">
                   <Bar
                     data={chartData}
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
-                      plugins: { legend: { display: false } },
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                          callbacks: {
+                            label: ctx => ` ₱${ctx.parsed.y.toLocaleString()}/day`
+                          }
+                        }
+                      },
                       scales: {
-                        y: { beginAtZero: false, min: 400, max: 800 }
+                        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 35 } },
+                        y: { beginAtZero: false, min: 380, grid: { color: '#f3f4f6' }, ticks: { callback: v => `₱${v}`, font: { size: 11 } } }
                       }
                     }}
                   />
                 </div>
               </div>
 
-              {/* Recent Updates Table */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
-                <div>
-                  <h3 className="font-bold text-slate-900 mb-4 text-base">Recent Wage Order Updates</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-slate-500 font-semibold uppercase">
-                          <th className="py-2.5">Region</th>
-                          <th className="py-2.5">Wage Order</th>
-                          <th className="py-2.5">Effective</th>
-                          <th className="py-2.5 text-right">Non-Agri</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {wageData.regions.slice(0, 7).map((r, idx) => {
-                          const nonAgri = r.rates.find(rt => rt.type === 'Non-Agriculture');
-                          return (
-                            <tr
-                              key={idx}
-                              onClick={() => setSelectedRegion(r)}
-                              className="hover:bg-blue-50/50 cursor-pointer transition"
-                            >
-                              <td className="py-2.5 font-medium text-slate-800 pr-2">{r.name.replace(/\(.*\)/, '')}</td>
-                              <td className="py-2.5 font-mono text-slate-600">{r.wageOrder}</td>
-                              <td className="py-2.5 text-slate-500">{r.dateEffective || 'Published'}</td>
-                              <td className="py-2.5 font-bold text-right text-blue-600">
-                                ₱{nonAgri?.amount || nonAgri?.tranches[0]?.amount || 'TBA'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                <div className="pt-4 border-t border-slate-100 text-right">
-                  <button
-                    onClick={() => setCurrentView('wages')}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
-                  >
-                    View all 23 regions <ArrowRight className="w-3.5 h-3.5" />
+              {/* Recent Updates */}
+              <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5 flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-gray-900">Latest Wage Orders</h3>
+                  <button onClick={() => navigate('wages')} className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                    See all <ArrowRight className="w-3 h-3" />
                   </button>
+                </div>
+                <div className="flex-1 space-y-0 divide-y divide-gray-50">
+                  {wageData.regions.slice(0, 7).map((r, i) => {
+                    const na = r.rates.find(rt => rt.type === 'Non-Agriculture');
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => setSelectedRegion(r)}
+                        className="flex items-center justify-between py-2.5 cursor-pointer hover:text-blue-700 group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium text-gray-800 group-hover:text-blue-700 truncate pr-2">
+                            {r.name.replace(/\s*\(.*?\)\s*/g, '').trim() || r.name}
+                          </div>
+                          <div className="text-[11px] text-gray-400 mt-0.5 font-mono">{r.wageOrder}</div>
+                        </div>
+                        <div className="text-sm font-bold text-blue-700 flex-shrink-0">
+                          ₱{na?.amount || na?.tranches[0]?.amount || '—'}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* -------------------------------------------------------------------------------- */}
-        {/* VIEW 2: WAGE RATES (GRID & LIST) */}
-        {/* -------------------------------------------------------------------------------- */}
+        {/* ── VIEW: WAGE RATES ──────────────────────────────── */}
         {currentView === 'wages' && (
-          <div className="space-y-6">
-            {/* Filter Bar */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="relative w-full md:w-80">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+          <div className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Wage Rates</h2>
+                <p className="text-sm text-gray-500 mt-0.5">{filteredRegions.length} regions · current statutory minimum daily rates</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={handleExportExcel} className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:border-gray-300 hover:text-gray-900 transition">
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
+                </button>
+                <button onClick={handleExportCSV} className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 hover:border-gray-300 hover:text-gray-900 transition">
+                  <Download className="w-3.5 h-3.5" /> CSV
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Row */}
+            <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search regions, cities, orders..."
+                  placeholder="Search region, city, wage order..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
-
-              <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-end">
-                {/* Sector Filter */}
-                <select
-                  value={sectorFilter}
-                  onChange={(e: any) => setSectorFilter(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none"
-                >
+              <div className="flex items-center gap-2 flex-wrap">
+                <select value={sectorFilter} onChange={(e: any) => setSectorFilter(e.target.value)} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none cursor-pointer">
                   <option value="all">All Sectors</option>
                   <option value="Non-Agriculture">Non-Agriculture</option>
                   <option value="Agriculture">Agriculture</option>
                 </select>
-
-                {/* Sort Option */}
-                <select
-                  value={sortOption}
-                  onChange={(e: any) => setSortOption(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none"
-                >
-                  <option value="az">Region A - Z</option>
-                  <option value="za">Region Z - A</option>
-                  <option value="highest">Highest Wage First</option>
-                  <option value="lowest">Lowest Wage First</option>
+                <select value={sortOption} onChange={(e: any) => setSortOption(e.target.value)} className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 focus:outline-none cursor-pointer">
+                  <option value="az">Name A–Z</option>
+                  <option value="za">Name Z–A</option>
+                  <option value="highest">Highest First</option>
+                  <option value="lowest">Lowest First</option>
                 </select>
-
-                {/* View Mode Toggle */}
-                <div className="flex bg-slate-100 p-1 rounded-xl">
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                      viewMode === 'grid' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-                    }`}
-                  >
-                    Grid
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                      viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-                    }`}
-                  >
-                    List
-                  </button>
+                <div className="flex bg-gray-100 p-0.5 rounded-lg">
+                  {(['grid', 'list'] as const).map(m => (
+                    <button key={m} onClick={() => setViewMode(m)} className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition ${viewMode === m ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}>
+                      {m === 'grid' ? '⊞' : '☰'}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Grid View */}
+            {/* Grid */}
             {viewMode === 'grid' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredRegions.map((region) => {
-                  const nonAgri = region.rates.find(rt => rt.type === 'Non-Agriculture');
-                  const agri = region.rates.find(rt => rt.type === 'Agriculture');
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredRegions.map(region => {
+                  const na = region.rates.find(rt => rt.type === 'Non-Agriculture');
+                  const ag = region.rates.find(rt => rt.type === 'Agriculture');
+                  const hasTransches = region.rates.some(r => r.tranches.length > 0);
 
                   return (
                     <div
                       key={region.id}
                       onClick={() => setSelectedRegion(region)}
-                      className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md hover:border-blue-300 transition cursor-pointer flex flex-col justify-between group"
+                      className="bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition cursor-pointer group overflow-hidden"
                     >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-lg font-mono">
+                      <div className="p-4 pb-3">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <span className="text-[11px] font-mono font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
                             {region.wageOrder}
                           </span>
-                          <span className="text-[11px] text-slate-400">
-                            {region.dateEffective ? `Eff: ${region.dateEffective}` : 'Published'}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {hasTransches && (
+                              <span className="text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">Tranches</span>
+                            )}
+                          </div>
                         </div>
-                        <h4 className="font-bold text-slate-900 text-base group-hover:text-blue-600 transition">
+                        <h4 className="font-semibold text-sm text-gray-900 group-hover:text-blue-700 leading-snug transition">
                           {region.name}
                         </h4>
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{region.notes || 'No area restrictions.'}</p>
+                        <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">{region.notes}</p>
                       </div>
-
-                      <div className="mt-5 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
-                        <div className="p-2.5 bg-slate-50 rounded-xl">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase">Non-Agriculture</div>
-                          <div className="text-lg font-extrabold text-blue-600 mt-0.5">
-                            ₱{nonAgri?.amount || nonAgri?.tranches[0]?.amount || 'TBA'}
-                          </div>
+                      <div className="px-4 pb-4 border-t border-gray-50 pt-3 grid grid-cols-2 gap-2">
+                        <div>
+                          <div className="text-[10px] font-medium text-gray-400 mb-0.5">Non-Agri</div>
+                          <div className="text-lg font-bold text-blue-700">₱{na?.amount || na?.tranches[0]?.amount || '—'}</div>
                         </div>
-                        <div className="p-2.5 bg-slate-50 rounded-xl">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase">Agriculture</div>
-                          <div className="text-lg font-extrabold text-slate-800 mt-0.5">
-                            ₱{agri?.amount || agri?.tranches[0]?.amount || 'TBA'}
-                          </div>
+                        <div>
+                          <div className="text-[10px] font-medium text-gray-400 mb-0.5">Agriculture</div>
+                          <div className="text-lg font-bold text-gray-700">₱{ag?.amount || ag?.tranches[0]?.amount || '—'}</div>
                         </div>
                       </div>
                     </div>
@@ -802,191 +679,162 @@ export default function App() {
               </div>
             )}
 
-            {/* List View */}
+            {/* List */}
             {viewMode === 'list' && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-bold">
-                      <tr>
-                        <th className="py-3 px-4">Region</th>
-                        <th className="py-3 px-3">Wage Order</th>
-                        <th className="py-3 px-3">Effective Date</th>
-                        <th className="py-3 px-3 text-right">Non-Agri (₱)</th>
-                        <th className="py-3 px-3 text-right">Agri (₱)</th>
-                        <th className="py-3 px-4">Jurisdictions</th>
-                        <th className="py-3 px-3 text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredRegions.map((region) => {
-                        const nonAgri = region.rates.find(rt => rt.type === 'Non-Agriculture');
-                        const agri = region.rates.find(rt => rt.type === 'Agriculture');
-
-                        return (
-                          <tr key={region.id} className="hover:bg-blue-50/40 transition">
-                            <td className="py-3 px-4 font-semibold text-slate-900">{region.name}</td>
-                            <td className="py-3 px-3 font-mono text-slate-700">{region.wageOrder}</td>
-                            <td className="py-3 px-3 text-slate-500">{region.dateEffective || 'Published'}</td>
-                            <td className="py-3 px-3 text-right font-bold text-blue-600">
-                              ₱{nonAgri?.amount || nonAgri?.tranches[0]?.amount || 'TBA'}
-                            </td>
-                            <td className="py-3 px-3 text-right font-bold text-slate-800">
-                              ₱{agri?.amount || agri?.tranches[0]?.amount || 'TBA'}
-                            </td>
-                            <td className="py-3 px-4 text-slate-500 max-w-xs truncate">{region.notes}</td>
-                            <td className="py-3 px-3 text-center">
-                              <button
-                                onClick={() => setSelectedRegion(region)}
-                                className="px-2.5 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white rounded-lg text-xs font-semibold transition"
-                              >
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      <th className="text-left py-3 px-4">Region</th>
+                      <th className="text-left py-3 px-3">Wage Order</th>
+                      <th className="text-left py-3 px-3">Effective</th>
+                      <th className="text-right py-3 px-3">Non-Agri</th>
+                      <th className="text-right py-3 px-3">Agri</th>
+                      <th className="py-3 px-4" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredRegions.map(region => {
+                      const na = region.rates.find(rt => rt.type === 'Non-Agriculture');
+                      const ag = region.rates.find(rt => rt.type === 'Agriculture');
+                      return (
+                        <tr key={region.id} onClick={() => setSelectedRegion(region)} className="hover:bg-gray-50 cursor-pointer transition">
+                          <td className="py-3 px-4 font-medium text-gray-900 max-w-xs">{region.name}</td>
+                          <td className="py-3 px-3 font-mono text-xs text-gray-500">{region.wageOrder}</td>
+                          <td className="py-3 px-3 text-xs text-gray-400">{region.dateEffective || '—'}</td>
+                          <td className="py-3 px-3 text-right font-semibold text-blue-700">₱{na?.amount || na?.tranches[0]?.amount || '—'}</td>
+                          <td className="py-3 px-3 text-right font-semibold text-gray-700">₱{ag?.amount || ag?.tranches[0]?.amount || '—'}</td>
+                          <td className="py-3 px-4 text-right">
+                            <span className="text-xs text-gray-400 hover:text-blue-600 transition">Details →</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
         )}
 
-        {/* -------------------------------------------------------------------------------- */}
-        {/* VIEW 3: COMPARE REGIONS */}
-        {/* -------------------------------------------------------------------------------- */}
+        {/* ── VIEW: COMPARE ─────────────────────────────────── */}
         {currentView === 'compare' && wageData && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm max-w-3xl mx-auto">
-              <h3 className="font-bold text-slate-900 text-lg mb-2">Wage Comparison Tool</h3>
-              <p className="text-xs text-slate-500 mb-6">Compare statutory minimum wages between any two Philippine administrative regions.</p>
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Compare Regions</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Side-by-side wage comparison between any two regions</p>
+            </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Region 1</label>
-                  <select
-                    value={compareRegion1}
-                    onChange={(e) => setCompareRegion1(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
-                  >
-                    {wageData.regions.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
+            <div className="max-w-2xl">
+              <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    { label: 'Region A', value: compareRegion1, onChange: setCompareRegion1, accent: 'blue' },
+                    { label: 'Region B', value: compareRegion2, onChange: setCompareRegion2, accent: 'indigo' },
+                  ].map(({ label, value, onChange, accent }) => (
+                    <div key={label}>
+                      <label className="block text-xs font-medium text-gray-500 mb-1.5">{label}</label>
+                      <div className="relative">
+                        <select
+                          value={value}
+                          onChange={e => onChange(e.target.value)}
+                          className="w-full appearance-none py-2.5 pl-3 pr-8 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                        >
+                          {wageData.regions.map(r => (
+                            <option key={r.id} value={r.id}>{r.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Region 2</label>
-                  <select
-                    value={compareRegion2}
-                    onChange={(e) => setCompareRegion2(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
-                  >
-                    {wageData.regions.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                </div>
+
+                {comparisonResults && (
+                  <div className="space-y-4 pt-2 border-t border-gray-100">
+                    <div className="grid grid-cols-2 gap-4">
+                      {[
+                        { r: comparisonResults.r1, w: comparisonResults.w1, color: 'blue' },
+                        { r: comparisonResults.r2, w: comparisonResults.w2, color: 'indigo' },
+                      ].map(({ r, w, color }, i) => (
+                        <div key={i} className={`p-4 rounded-xl border ${color === 'blue' ? 'bg-blue-50 border-blue-100' : 'bg-indigo-50 border-indigo-100'}`}>
+                          <div className={`text-xs font-medium mb-2 ${color === 'blue' ? 'text-blue-700' : 'text-indigo-700'}`}>{r.name}</div>
+                          <div className={`text-3xl font-bold ${color === 'blue' ? 'text-blue-800' : 'text-indigo-800'}`}>₱{w}</div>
+                          <div className="text-xs text-gray-400 mt-1 font-mono">{r.wageOrder}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                      <div>
+                        <div className="text-xs text-gray-500 font-medium">Daily Difference</div>
+                        <div className="text-2xl font-bold text-gray-900">₱{comparisonResults.diff}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500 font-medium">Gap</div>
+                        <div className="text-2xl font-bold text-gray-900">{comparisonResults.variance}%</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-
-              {comparisonResults && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 bg-blue-50/60 rounded-xl border border-blue-100 text-center">
-                      <div className="text-xs font-bold text-blue-900 mb-1">{comparisonResults.r1.name}</div>
-                      <div className="text-3xl font-black text-blue-700">₱{comparisonResults.w1}</div>
-                      <div className="text-xs text-slate-500 mt-1">{comparisonResults.r1.wageOrder}</div>
-                    </div>
-                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center">
-                      <div className="text-xs font-bold text-slate-900 mb-1">{comparisonResults.r2.name}</div>
-                      <div className="text-3xl font-black text-slate-800">₱{comparisonResults.w2}</div>
-                      <div className="text-xs text-slate-500 mt-1">{comparisonResults.r2.wageOrder}</div>
-                    </div>
-                  </div>
-
-                  {/* Variance Card */}
-                  <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-emerald-900">Absolute Wage Difference</div>
-                      <div className="text-2xl font-black text-emerald-700">₱{comparisonResults.diff} / day</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-bold text-emerald-900">Variance Percentage</div>
-                      <div className="text-2xl font-black text-emerald-700">{comparisonResults.variance}%</div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
 
-        {/* -------------------------------------------------------------------------------- */}
-        {/* VIEW 4: RATE MOVEMENTS */}
-        {/* -------------------------------------------------------------------------------- */}
+        {/* ── VIEW: MOVEMENTS ──────────────────────────────── */}
         {currentView === 'movements' && movementsData && (
-          <div className="space-y-6">
-            {/* 4 Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Total Increases</div>
-                <div className="text-3xl font-black text-emerald-600 mt-2">{movementsData.summary.totalIncreases}</div>
-                <div className="text-xs text-slate-500 mt-1">Recorded Wage Movements</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Avg. Increase</div>
-                <div className="text-3xl font-black text-blue-600 mt-2">{movementsData.summary.avgIncrease}%</div>
-                <div className="text-xs text-slate-500 mt-1">Average Growth Rate</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Regions Changed</div>
-                <div className="text-3xl font-black text-indigo-600 mt-2">{movementsData.summary.regionsChanged}</div>
-                <div className="text-xs text-slate-500 mt-1">Active Adjustments</div>
-              </div>
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Last Movement</div>
-                <div className="text-3xl font-black text-slate-800 mt-2">{movementsData.summary.lastMovementDays}d ago</div>
-                <div className="text-xs text-slate-500 mt-1">Days since effectivity</div>
-              </div>
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Rate Movements</h2>
+              <p className="text-sm text-gray-500 mt-0.5">Historical wage adjustments and baseline comparisons</p>
             </div>
 
-            {/* Movements Audit Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-slate-200 font-bold text-sm text-slate-800">
-                Rate Movements & Baseline Comparisons
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: 'Total Increases', value: movementsData.summary.totalIncreases, sub: 'Recorded adjustments', color: 'text-emerald-700' },
+                { label: 'Average Increase', value: `${movementsData.summary.avgIncrease}%`, sub: 'Growth rate', color: 'text-blue-700' },
+                { label: 'Regions Changed', value: movementsData.summary.regionsChanged, sub: 'Active adjustments', color: 'text-indigo-700' },
+                { label: 'Last Movement', value: `${movementsData.summary.lastMovementDays}d ago`, sub: 'Days since effectivity', color: 'text-gray-700' },
+              ].map((c, i) => (
+                <div key={i} className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="text-xs font-medium text-gray-500 mb-2">{c.label}</div>
+                  <div className={`text-2xl font-bold ${c.color}`}>{c.value}</div>
+                  <div className="text-xs text-gray-400 mt-1">{c.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900">Wage Movement History</h3>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-bold">
-                    <tr>
-                      <th className="py-3 px-4">Region</th>
-                      <th className="py-3 px-3">Sector</th>
-                      <th className="py-3 px-3 text-right">Previous (₱)</th>
-                      <th className="py-3 px-3 text-right">Current (₱)</th>
-                      <th className="py-3 px-3 text-right">Change (₱)</th>
-                      <th className="py-3 px-3 text-right">Change (%)</th>
-                      <th className="py-3 px-3">Effective Date</th>
-                      <th className="py-3 px-3">Wage Order</th>
-                      <th className="py-3 px-3 text-center">Status</th>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      <th className="text-left py-3 px-5">Region</th>
+                      <th className="text-left py-3 px-3">Sector</th>
+                      <th className="text-right py-3 px-3">Previous</th>
+                      <th className="text-right py-3 px-3">Current</th>
+                      <th className="text-right py-3 px-3">Change</th>
+                      <th className="text-left py-3 px-3">Effective</th>
+                      <th className="text-left py-3 px-5">Wage Order</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {movementsData.movements.map((m, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50 transition">
-                        <td className="py-3 px-4 font-semibold text-slate-900">{m.regionName}</td>
-                        <td className="py-3 px-3 text-slate-600">{m.sector}</td>
-                        <td className="py-3 px-3 text-right text-slate-500">₱{m.previousAmount}</td>
-                        <td className="py-3 px-3 text-right font-bold text-blue-700">₱{m.currentAmount}</td>
-                        <td className="py-3 px-3 text-right font-bold text-emerald-600">+₱{m.change}</td>
-                        <td className="py-3 px-3 text-right font-bold text-emerald-600">+{m.changePercent}%</td>
-                        <td className="py-3 px-3 text-slate-500">{m.currentEffectiveDate}</td>
-                        <td className="py-3 px-3 font-mono text-slate-700">{m.currentWageOrder}</td>
-                        <td className="py-3 px-3 text-center">
-                          <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[10px] font-bold">
-                            {m.status}
+                  <tbody className="divide-y divide-gray-50">
+                    {movementsData.movements.map((m, i) => (
+                      <tr key={i} className="hover:bg-gray-50 transition">
+                        <td className="py-3 px-5 font-medium text-gray-900">{m.regionName}</td>
+                        <td className="py-3 px-3 text-xs text-gray-500">{m.sector}</td>
+                        <td className="py-3 px-3 text-right text-gray-400">₱{m.previousAmount}</td>
+                        <td className="py-3 px-3 text-right font-semibold text-gray-900">₱{m.currentAmount}</td>
+                        <td className="py-3 px-3 text-right">
+                          <span className="text-emerald-700 font-semibold text-xs bg-emerald-50 px-2 py-0.5 rounded">
+                            +₱{m.change} ({m.changePercent}%)
                           </span>
                         </td>
+                        <td className="py-3 px-3 text-xs text-gray-400">{m.currentEffectiveDate}</td>
+                        <td className="py-3 px-5 font-mono text-xs text-gray-500">{m.currentWageOrder}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -996,162 +844,127 @@ export default function App() {
           </div>
         )}
 
-        {/* -------------------------------------------------------------------------------- */}
-        {/* VIEW 5: ADMIN CMS */}
-        {/* -------------------------------------------------------------------------------- */}
+        {/* ── VIEW: ADMIN (hidden route) ────────────────────── */}
         {currentView === 'admin' && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             {!adminToken ? (
-              /* Admin Login Form */
-              <div className="max-w-md mx-auto bg-white p-8 rounded-2xl border border-slate-200 shadow-md">
-                <div className="text-center mb-6">
-                  <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl mx-auto flex items-center justify-center mb-3 shadow">
-                    <ShieldCheck className="w-6 h-6" />
+              <div className="max-w-sm mx-auto pt-8">
+                <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm">
+                  <div className="text-center mb-6">
+                    <div className="inline-flex items-center justify-center w-12 h-12 bg-gray-900 rounded-xl mb-4">
+                      <ShieldCheck className="w-6 h-6 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900">Admin Access</h3>
+                    <p className="text-sm text-gray-400 mt-1">Restricted. Authorized personnel only.</p>
                   </div>
-                  <h3 className="font-bold text-lg text-slate-900">Admin Authentication</h3>
-                  <p className="text-xs text-slate-500 mt-1">Log in to manage Alwaysdata wage records and triggers</p>
+
+                  {loginError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-700 text-sm rounded-lg">
+                      {loginError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1.5">Username</label>
+                      <input
+                        type="text"
+                        value={loginUsername}
+                        onChange={e => setLoginUsername(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                        autoComplete="username"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1.5">Password</label>
+                      <input
+                        type="password"
+                        value={loginPassword}
+                        onChange={e => setLoginPassword(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                        autoComplete="current-password"
+                      />
+                    </div>
+                    <button type="submit" className="w-full py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition">
+                      Sign in
+                    </button>
+                  </form>
                 </div>
-
-                {loginError && (
-                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl mb-4">
-                    {loginError}
-                  </div>
-                )}
-
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Username</label>
-                    <input
-                      type="text"
-                      value={loginUsername}
-                      onChange={(e) => setLoginUsername(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
-                    <input
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="Enter password (e.g. jayjayjhudel)"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs sm:text-sm rounded-xl shadow transition"
-                  >
-                    Log In as Admin
-                  </button>
-                </form>
               </div>
             ) : (
-              /* Authenticated Admin Dashboard */
-              <div className="space-y-6">
-                <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-mono">
-                        Logged in as {adminUser}
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-bold mt-1">DMRC Administrative Control Panel</h3>
-                    <p className="text-xs text-slate-400 mt-1">Database: erucare_dmrcwagerate @ mysql-erucare.alwaysdata.net</p>
+                    <h2 className="text-xl font-bold text-gray-900">Admin Panel</h2>
+                    <p className="text-sm text-gray-400 mt-0.5">Signed in as <span className="font-medium text-gray-700">{adminUser}</span></p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={handleManualSync}
                       disabled={isSyncing}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow flex items-center gap-2 transition"
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
                     >
                       <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                      {isSyncing ? 'Syncing...' : 'Sync NWPC Rates Now'}
+                      {isSyncing ? 'Syncing…' : 'Sync NWPC Now'}
                     </button>
-                    <button
-                      onClick={handleLogout}
-                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl flex items-center gap-1.5 transition"
-                    >
+                    <button onClick={handleLogout} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-600 hover:text-gray-900 text-sm font-medium rounded-lg transition">
                       <LogOut className="w-4 h-4" /> Logout
                     </button>
                   </div>
                 </div>
 
                 {syncMessage && (
-                  <div className="p-4 bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded-xl flex items-center justify-between">
+                  <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-xl text-sm text-blue-800">
                     <span>{syncMessage}</span>
-                    <button onClick={() => setSyncMessage('')}><X className="w-4 h-4" /></button>
+                    <button onClick={() => setSyncMessage('')}><X className="w-4 h-4 text-blue-400" /></button>
                   </div>
                 )}
 
-                {/* Import / Export Controls */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                  <h4 className="font-bold text-slate-900 text-sm mb-4">Data Import & Export (Parity with DMRC PHP)</h4>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={handleExportExcel}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl flex items-center gap-2 shadow-sm transition"
-                    >
-                      <FileSpreadsheet className="w-4 h-4" /> Download Excel (.xlsx)
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Export Data</h4>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={handleExportExcel} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition">
+                      <FileSpreadsheet className="w-4 h-4" /> Excel (.xlsx)
                     </button>
-                    <button
-                      onClick={handleExportCSV}
-                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold rounded-xl flex items-center gap-2 shadow-sm transition"
-                    >
-                      <FileText className="w-4 h-4" /> Download CSV (.csv)
+                    <button onClick={handleExportCSV} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-medium rounded-lg transition">
+                      <FileText className="w-4 h-4" /> CSV
                     </button>
-                    <button
-                      onClick={handleExportJSON}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl flex items-center gap-2 shadow-sm transition"
-                    >
-                      <Download className="w-4 h-4" /> Download JSON (.json)
+                    <button onClick={handleExportJSON} className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-xs font-medium rounded-lg transition">
+                      <Download className="w-4 h-4" /> JSON
                     </button>
                   </div>
                 </div>
 
-                {/* Regions CMS Table */}
                 {wageData && (
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-4 border-b border-slate-200 font-bold text-sm text-slate-800 flex justify-between items-center">
-                      <span>Regional Wage Records ({wageData.regions.length} entries)</span>
-                      <span className="text-xs font-normal text-slate-500">Last Synced: {new Date(wageData.lastUpdated).toLocaleString()}</span>
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-gray-900">Regional Records</h4>
+                      <span className="text-xs text-gray-400">Last sync: {new Date(wageData.lastUpdated).toLocaleString()}</span>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-bold">
-                          <tr>
-                            <th className="py-3 px-4">ID</th>
-                            <th className="py-3 px-4">Region Name</th>
-                            <th className="py-3 px-3">Wage Order</th>
-                            <th className="py-3 px-3">Effective Date</th>
-                            <th className="py-3 px-3 text-right">Non-Agri (₱)</th>
-                            <th className="py-3 px-3 text-right">Agri (₱)</th>
-                            <th className="py-3 px-3 text-center">Status</th>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                            <th className="text-left py-3 px-5">Region</th>
+                            <th className="text-left py-3 px-3">Wage Order</th>
+                            <th className="text-left py-3 px-3">Effective</th>
+                            <th className="text-right py-3 px-3">Non-Agri</th>
+                            <th className="text-right py-3 px-5">Agriculture</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {wageData.regions.map((reg) => {
-                            const nonAgri = reg.rates.find(rt => rt.type === 'Non-Agriculture');
-                            const agri = reg.rates.find(rt => rt.type === 'Agriculture');
+                        <tbody className="divide-y divide-gray-50">
+                          {wageData.regions.map(reg => {
+                            const na = reg.rates.find(rt => rt.type === 'Non-Agriculture');
+                            const ag = reg.rates.find(rt => rt.type === 'Agriculture');
                             return (
-                              <tr key={reg.id} className="hover:bg-slate-50 transition">
-                                <td className="py-3 px-4 font-mono font-medium text-slate-500">{reg.id}</td>
-                                <td className="py-3 px-4 font-semibold text-slate-900">{reg.name}</td>
-                                <td className="py-3 px-3 font-mono text-blue-700">{reg.wageOrder}</td>
-                                <td className="py-3 px-3 text-slate-500">{reg.dateEffective || 'Published'}</td>
-                                <td className="py-3 px-3 text-right font-bold text-slate-900">
-                                  ₱{nonAgri?.amount || nonAgri?.tranches[0]?.amount || 'TBA'}
-                                </td>
-                                <td className="py-3 px-3 text-right font-bold text-slate-800">
-                                  ₱{agri?.amount || agri?.tranches[0]?.amount || 'TBA'}
-                                </td>
-                                <td className="py-3 px-3 text-center">
-                                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold">
-                                    Active
-                                  </span>
-                                </td>
+                              <tr key={reg.id} className="hover:bg-gray-50 transition">
+                                <td className="py-3 px-5 font-medium text-gray-900">{reg.name}</td>
+                                <td className="py-3 px-3 font-mono text-xs text-blue-600">{reg.wageOrder}</td>
+                                <td className="py-3 px-3 text-xs text-gray-400">{reg.dateEffective || '—'}</td>
+                                <td className="py-3 px-3 text-right font-semibold text-gray-900">₱{na?.amount || na?.tranches[0]?.amount || '—'}</td>
+                                <td className="py-3 px-5 text-right font-semibold text-gray-700">₱{ag?.amount || ag?.tranches[0]?.amount || '—'}</td>
                               </tr>
                             );
                           })}
@@ -1166,11 +979,19 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 space-y-1">
-          <p className="font-semibold text-slate-700">DMRC Regional Minimum Wage Monitoring System 2.0</p>
-          <p>Autonomous Node.js & React Platform • Connected to Alwaysdata MySQL • Automated NWPC DOLE Synchronization</p>
+      {/* ── FOOTER ───────────────────────────────────────────── */}
+      <footer className="border-t border-gray-200 bg-white mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-400">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-3.5 h-3.5" />
+            <span>DMRC Regional Minimum Wage Monitoring · Data from NWPC DOLE</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span>Developed by</span>
+            <a href="https://jhudel.vercel.app/" target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-700 transition">
+              Jhudel
+            </a>
+          </div>
         </div>
       </footer>
     </div>
