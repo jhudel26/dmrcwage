@@ -1,53 +1,57 @@
 const { getPool } = require('./_db');
 
-// All known regions with 2-tranche schedules and their data
+// All known regions with 2-tranche schedules and their data (verified against live NWPC)
 const TRANCHE_DATA = {
+  'ncr': [
+    { sector: 'Non-Agriculture', t1: { amount: 755, date: '2026-09-26' }, t2: { amount: 780, date: '2027-01-20' } },
+    { sector: 'Agriculture',     t1: { amount: 718, date: '2026-09-26' }, t2: { amount: 743, date: '2027-01-20' } }
+  ],
   'region3': [
     { sector: 'Non-Agriculture', t1: { amount: 570, date: '2025-10-30' }, t2: { amount: 600, date: '2026-04-16' } },
     { sector: 'Agriculture',     t1: { amount: 540, date: '2025-10-30' }, t2: { amount: 570, date: '2026-04-16' } }
   ],
   'region3-aurora': [
-    { sector: 'Non-Agriculture', t1: { amount: 515, date: '2025-10-30' }, t2: { amount: 545, date: '2026-04-16' } },
-    { sector: 'Agriculture',     t1: { amount: 505, date: '2025-10-30' }, t2: { amount: 525, date: '2026-04-16' } }
+    { sector: 'Non-Agriculture', t1: { amount: 530, date: '2025-10-30' }, t2: { amount: 560, date: '2026-04-16' } },
+    { sector: 'Agriculture',     t1: { amount: 515, date: '2025-10-30' }, t2: { amount: 545, date: '2026-04-16' } }
   ],
   'region5': [
     { sector: 'Non-Agriculture', t1: { amount: 455, date: '2026-04-08' }, t2: { amount: 480, date: '2026-12-01' } },
     { sector: 'Agriculture',     t1: { amount: 455, date: '2026-04-08' }, t2: { amount: 480, date: '2026-12-01' } }
   ],
   'region8': [
-    { sector: 'Non-Agriculture', t1: { amount: 440, date: '2025-12-08' }, t2: { amount: 470, date: '2026-06-01' } },
-    { sector: 'Agriculture',     t1: { amount: 410, date: '2025-12-08' }, t2: { amount: 440, date: '2026-06-01' } }
+    { sector: 'Non-Agriculture', t1: { amount: 452, date: '2025-12-08' }, t2: { amount: 470, date: '2026-06-01' } },
+    { sector: 'Agriculture',     t1: { amount: 422, date: '2025-12-08' }, t2: { amount: 440, date: '2026-06-01' } }
   ],
   'region9': [
-    { sector: 'Non-Agriculture', t1: { amount: 451, date: '2026-01-01' }, t2: { amount: 464, date: '2026-06-01' } },
-    { sector: 'Agriculture',     t1: { amount: 440, date: '2026-01-01' }, t2: { amount: 451, date: '2026-06-01' } }
+    { sector: 'Non-Agriculture', t1: { amount: 439, date: '2026-01-01' }, t2: { amount: 464, date: '2026-06-01' } },
+    { sector: 'Agriculture',     t1: { amount: 426, date: '2026-01-01' }, t2: { amount: 451, date: '2026-06-01' } }
   ],
   'region10': [
-    { sector: 'Non-Agriculture', t1: { amount: 485, date: '2026-01-16' }, t2: { amount: 500, date: '2026-05-01' } },
-    { sector: 'Agriculture',     t1: { amount: 475, date: '2026-01-16' }, t2: { amount: 485, date: '2026-05-01' } }
+    { sector: 'Non-Agriculture', t1: { amount: 486, date: '2026-01-16' }, t2: { amount: 500, date: '2026-05-01' } },
+    { sector: 'Agriculture',     t1: { amount: 486, date: '2026-01-16' }, t2: { amount: 500, date: '2026-05-01' } }
   ],
   'region11': [
     { sector: 'Non-Agriculture', t1: { amount: 525, date: '2026-03-13' }, t2: { amount: 540, date: '2026-09-01' } },
-    { sector: 'Agriculture',     t1: { amount: 510, date: '2026-03-13' }, t2: { amount: 525, date: '2026-09-01' } }
+    { sector: 'Agriculture',     t1: { amount: 515, date: '2026-03-13' }, t2: { amount: 525, date: '2026-09-01' } }
   ],
   'region12': [
     { sector: 'Non-Agriculture', t1: { amount: 476, date: '2026-11-22' }, t2: { amount: 501, date: '2027-01-01' } },
     { sector: 'Agriculture',     t1: { amount: 459, date: '2026-11-22' }, t2: { amount: 484, date: '2027-01-01' } }
   ],
   'region13': [
-    { sector: 'Non-Agriculture', t1: { amount: 451, date: '2026-01-03' }, t2: { amount: 475, date: '2026-05-01' } },
-    { sector: 'Agriculture',     t1: { amount: 451, date: '2026-01-03' }, t2: { amount: 475, date: '2026-05-01' } }
+    { sector: 'Non-Agriculture', t1: { amount: 455, date: '2026-01-03' }, t2: { amount: 475, date: '2026-05-01' } },
+    { sector: 'Agriculture',     t1: { amount: 455, date: '2026-01-03' }, t2: { amount: 475, date: '2026-05-01' } }
   ],
   'barmm-a': [
     { sector: 'Non-Agriculture', t1: { amount: 436, date: '2026-08-06' }, t2: { amount: 461, date: '2026-12-01' } },
-    { sector: 'Agriculture',     t1: { amount: 401, date: '2026-08-06' }, t2: { amount: 426, date: '2026-12-01' } }
+    { sector: 'Agriculture',     t1: { amount: 411, date: '2026-08-06' }, t2: { amount: 436, date: '2026-12-01' } }
   ],
   'barmm-b': [
-    { sector: 'Non-Agriculture', t1: { amount: 436, date: '2026-08-06' }, t2: { amount: 461, date: '2026-12-01' } },
+    { sector: 'Non-Agriculture', t1: { amount: 411, date: '2026-08-06' }, t2: { amount: 436, date: '2026-12-01' } },
     { sector: 'Agriculture',     t1: { amount: 401, date: '2026-08-06' }, t2: { amount: 426, date: '2026-12-01' } }
   ],
   'barmm-c': [
-    { sector: 'Non-Agriculture', t1: { amount: 401, date: '2026-08-06' }, t2: { amount: 436, date: '2026-12-01' } },
+    { sector: 'Non-Agriculture', t1: { amount: 411, date: '2026-08-06' }, t2: { amount: 436, date: '2026-12-01' } },
     { sector: 'Agriculture',     t1: { amount: 401, date: '2026-08-06' }, t2: { amount: 426, date: '2026-12-01' } }
   ]
 };

@@ -64,7 +64,7 @@ function parseIsoDate(str) {
 function extractTrancheDates(grid, defaultEffDate) {
   const headerRows = grid.slice(0, Math.min(4, grid.length));
   const headerText = headerRows.map(r => r.join(' ')).join(' ');
-  if (!/tranche/i.test(headerText)) return [];
+  if (!/tranche|upon\s+(?:the\s+)?effectivity/i.test(headerText)) return [];
 
   // Look for all explicit dates in header rows (beyond "Upon Effectivity")
   const explicitDates = [];
@@ -177,16 +177,36 @@ function parseWageTables($, defaultEffDate) {
         subMatches['region4a 2nd to 5th'] = subMatches['region4a 2nd to 5th'] || {};
         if (parsedNonAgri) subMatches['region4a 2nd to 5th'].nonAgri = parsedNonAgri;
         if (parsedAgri) subMatches['region4a 2nd to 5th'].agri = parsedAgri;
-      } else if (/Class A/i.test(rowStr) && /Cebu|Mandaue/i.test(flat)) {
-        subMatches['region7-A'] = subMatches['region7-A'] || {};
-        subMatches['region7-A'].nonAgri = parsed;
-      } else if (/Class B/i.test(rowStr) && /Cebu|Bohol/i.test(flat)) {
+      } else if (/^Class B\b/i.test(rowStr) && /Cebu|Bohol/i.test(flat)) {
         subMatches['region7-B'] = subMatches['region7-B'] || {};
         subMatches['region7-B'].nonAgri = parsed;
+        subMatches['region7-B'].agri = parsed;
+      } else if (/^Class A\b/i.test(rowStr) && /Cebu|Mandaue/i.test(flat)) {
+        subMatches['region7-A'] = subMatches['region7-A'] || {};
+        subMatches['region7-A'].nonAgri = parsed;
+        subMatches['region7-A'].agri = parsed;
+      } else if (/Cotabato City/i.test(rowStr) && /BARMM/i.test(flat)) {
+        subMatches['barmm-a'] = subMatches['barmm-a'] || {};
+        if (/Non-Agriculture/i.test(rowStr) && !subMatches['barmm-a'].nonAgri) subMatches['barmm-a'].nonAgri = parsed;
+        if (/Agriculture/i.test(rowStr) && !/Non-Agriculture/i.test(rowStr) && !subMatches['barmm-a'].agri) subMatches['barmm-a'].agri = parsed;
+      } else if (/Maguindanao|SGA/i.test(rowStr) && /BARMM/i.test(flat)) {
+        for (const bId of ['barmm-b', 'barmm-c']) {
+          subMatches[bId] = subMatches[bId] || {};
+          if (/Non-Agriculture/i.test(rowStr) && !subMatches[bId].nonAgri) subMatches[bId].nonAgri = parsed;
+          if (/Agriculture/i.test(rowStr) && !/Non-Agriculture/i.test(rowStr) && !subMatches[bId].agri) subMatches[bId].agri = parsed;
+        }
       }
 
-      const isAgri = /Agriculture|Plantation/i.test(rowStr) && !/Non-Agriculture/i.test(rowStr);
-      const isNonAgri = /Non-Agriculture|Commercial|Industrial/i.test(rowStr);
+      const rowWithoutNonAgri = rowStr.replace(/Non-Agricultur(?:e|al)/gi, '');
+      const isSingleRateAllSectors =
+        /All Sectors|Cordillera Administrative Region|Bicol Region|\bMIMAROPA\b/i.test(flat) &&
+        !/Agricultur/i.test(flat);
+      const isAgri =
+        isSingleRateAllSectors ||
+        /Agricultur/i.test(rowWithoutNonAgri);
+      const isNonAgri =
+        isSingleRateAllSectors ||
+        /Non-Agricultur|Commercial|Industrial|Employing more than ten/i.test(rowStr);
 
       if (isAuroraTable) {
         subMatches['region3-aurora'] = subMatches['region3-aurora'] || {};
@@ -197,8 +217,12 @@ function parseWageTables($, defaultEffDate) {
         if (isNonAgri && !subMatches['region3'].nonAgri) subMatches['region3'].nonAgri = parsed;
         if (isAgri && !subMatches['region3'].agri) subMatches['region3'].agri = parsed;
       } else {
-        if (isNonAgri && !generalNonAgri) generalNonAgri = parsed;
-        if (isAgri && !generalAgri) generalAgri = parsed;
+        if (isNonAgri && (!generalNonAgri || (parsed.tranches.length > 0 && generalNonAgri.tranches.length === 0))) {
+          generalNonAgri = parsed;
+        }
+        if (isAgri && (!generalAgri || (parsed.tranches.length > 0 && generalAgri.tranches.length === 0))) {
+          generalAgri = parsed;
+        }
       }
     }
   });
@@ -207,29 +231,29 @@ function parseWageTables($, defaultEffDate) {
 }
 
 const FALLBACKS = {
-  'ncr':                   { nonAgri: 755, agri: 718, date: '2026-09-26', wo: 'NCR-28' },
+  'ncr':                   { nonAgri: 780, agri: 743, date: '2026-09-26', wo: 'NCR-28' },
   'car':                   { nonAgri: 505, agri: 505, date: '2025-12-30', wo: 'CAR-24' },
   'region1':               { nonAgri: 505, agri: 480, date: '2025-11-19', wo: 'RB 1-24' },
   'region2':               { nonAgri: 500, agri: 500, date: '2025-11-05', wo: 'RTWPB 2-24' },
-  'region3':               { nonAgri: 600, agri: 570, date: '2026-04-16', wo: 'RBIII-26' },
-  'region3-aurora':        { nonAgri: 545, agri: 525, date: '2026-04-16', wo: 'RBIII-26' },
+  'region3':               { nonAgri: 600, agri: 570, date: '2025-10-30', wo: 'RBIII-26' },
+  'region3-aurora':        { nonAgri: 560, agri: 545, date: '2025-10-30', wo: 'RBIII-26' },
   'region4a':              { nonAgri: 645, agri: 550, date: '2026-10-26', wo: 'IVA-23' },
   'region4a re1stclass':   { nonAgri: 590, agri: 550, date: '2026-10-26', wo: 'IVA-23' },
   'region4a 2nd to 5th':   { nonAgri: 550, agri: 550, date: '2026-10-26', wo: 'IVA-23' },
   'region4b':              { nonAgri: 455, agri: 455, date: '2026-01-01', wo: 'RB-MIMAROPA-13' },
-  'region5':               { nonAgri: 480, agri: 480, date: '2026-12-01', wo: 'RBV-23' },
+  'region5':               { nonAgri: 480, agri: 480, date: '2026-04-08', wo: 'RBV-23' },
   'region6':               { nonAgri: 590, agri: 565, date: '2026-11-20', wo: 'VI-30' },
   'region7-A':             { nonAgri: 582, agri: 582, date: '2026-10-14', wo: 'ROVII-27' },
   'region7-B':             { nonAgri: 542, agri: 542, date: '2026-10-14', wo: 'ROVII-27' },
-  'region8':               { nonAgri: 470, agri: 440, date: '2026-06-01', wo: 'VIII-25' },
-  'region9':               { nonAgri: 464, agri: 451, date: '2026-06-01', wo: 'RIX-24' },
-  'region10':              { nonAgri: 500, agri: 485, date: '2026-05-01', wo: 'RX-24' },
-  'region11':              { nonAgri: 540, agri: 525, date: '2026-09-01', wo: 'RB XI-24' },
-  'region12':              { nonAgri: 501, agri: 476, date: '2027-01-01', wo: 'XII-26' },
-  'region13':              { nonAgri: 475, agri: 475, date: '2026-05-01', wo: 'RXIII-20' },
-  'barmm-a':               { nonAgri: 461, agri: 461, date: '2026-12-01', wo: 'BARMM-05' },
-  'barmm-b':               { nonAgri: 461, agri: 461, date: '2026-12-01', wo: 'BARMM-05' },
-  'barmm-c':               { nonAgri: 436, agri: 436, date: '2026-12-01', wo: 'BARMM-05' },
+  'region8':               { nonAgri: 470, agri: 440, date: '2025-12-08', wo: 'VIII-25' },
+  'region9':               { nonAgri: 464, agri: 451, date: '2026-01-01', wo: 'RIX-24' },
+  'region10':              { nonAgri: 500, agri: 500, date: '2026-01-16', wo: 'RX-24' },
+  'region11':              { nonAgri: 540, agri: 525, date: '2026-03-13', wo: 'RB XI-24' },
+  'region12':              { nonAgri: 501, agri: 484, date: '2026-11-22', wo: 'XII-26' },
+  'region13':              { nonAgri: 475, agri: 475, date: '2026-01-03', wo: 'RXIII-20' },
+  'barmm-a':               { nonAgri: 461, agri: 436, date: '2026-08-06', wo: 'BARMM-05' },
+  'barmm-b':               { nonAgri: 436, agri: 426, date: '2026-08-06', wo: 'BARMM-05' },
+  'barmm-c':               { nonAgri: 436, agri: 426, date: '2026-08-06', wo: 'BARMM-05' },
 };
 
 async function upsertSectorRate(pool, scheduleId, sector, defaultCoverage, parsedRate, fallbackAmt) {
