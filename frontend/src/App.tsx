@@ -238,15 +238,20 @@ export default function App() {
   const chartData = useMemo(() => {
     if (!wageData) return { labels: [], datasets: [] };
     const shortLabel = (name: string) => {
+      // Named subregions — must come before region-number checks
       if (name.includes('(NCR)')) return 'NCR';
       if (name.includes('(CAR)')) return 'CAR';
-      if (name.includes('Extended Metro')) return 'IV-A (Metro)';
-      if (name.includes('1st Class')) return 'IV-A (1st Cl.)';
-      if (name.includes('2nd to 5th')) return 'IV-A (2nd-5th)';
-      if (name.includes('Aurora')) return 'III (Aurora)';
-      if (name.includes('Class A')) return 'VII (Class A)';
-      if (name.includes('Class B')) return 'VII (Class B)';
-      return name.replace(/\s*\(.*?\)\s*/g, '').trim() || name;
+      if (name.includes('Extended Metro')) return 'IV-A Metro';
+      if (name.includes('1st Class')) return 'IV-A 1st Cl.';
+      if (name.includes('2nd to 5th')) return 'IV-A 2nd–5th';
+      if (name.includes('Aurora')) return 'III-Aurora';
+      if (name.includes('Central Luzon') || (name.includes('Region III') && !name.includes('Aurora'))) return 'III-CenLuz';
+      if (name.includes('Class A')) return 'VII-ClassA';
+      if (name.includes('Class B')) return 'VII-ClassB';
+      if (name.includes('Davao') || (name.includes('Region XI'))) return 'XI-Davao';
+      // Strip parenthetical suffixes for all others
+      const stripped = name.replace(/Region\s+/i, '').replace(/\s*\(.*?\)\s*/g, '').trim();
+      return stripped || name;
     };
     const sorted = [...wageData.regions]
       .map(r => ({
@@ -634,7 +639,7 @@ export default function App() {
             >
               <span className="font-semibold">Recent Wage Update: </span>
               <span>
-                {latestEffectiveRegion.name} — Wage Order {latestEffectiveRegion.wageOrder} effective {latestEffectiveRegion.dateEffective}
+                {latestEffectiveRegion.name} — Wage Order {latestEffectiveRegion.wageOrder.replace(/\s+[a-z]\/$/i, '').trim()} effective {latestEffectiveRegion.dateEffective}
               </span>
             </button>
             <button
@@ -970,9 +975,9 @@ export default function App() {
                 </div>
 
                 {comparisonResults && (
-                  <div className="space-y-4 pt-3 border-t border-gray-100">
+                  <div className="space-y-5 pt-3 border-t border-gray-100">
                     {/* Non-Agriculture & Agriculture Comparison */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                       <div>
                         <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2.5">Non-Agriculture Daily Rate</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -986,7 +991,7 @@ export default function App() {
                               <div className="w-full h-1.5 bg-white/70 rounded-full mt-3 overflow-hidden">
                                 <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.round((w / comparisonResults.maxWage) * 100)}%` }} />
                               </div>
-                              <div className="text-[11px] text-gray-500 mt-2 font-mono">{r.wageOrder} · Eff. {r.dateEffective || '—'}</div>
+                              <div className="text-[11px] text-gray-500 mt-2 font-mono">{r.wageOrder.replace(/\s+[a-z]\/$/i, '')} · Eff. {r.dateEffective || '—'}</div>
                             </div>
                           ))}
                         </div>
@@ -1005,7 +1010,7 @@ export default function App() {
                               <div className="w-full h-1.5 bg-white/70 rounded-full mt-3 overflow-hidden">
                                 <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.round((w / comparisonResults.maxWage) * 100)}%` }} />
                               </div>
-                              <div className="text-[11px] text-gray-500 mt-2 font-mono">{r.wageOrder} · Eff. {r.dateEffective || '—'}</div>
+                              <div className="text-[11px] text-gray-500 mt-2 font-mono">{r.wageOrder.replace(/\s+[a-z]\/$/i, '')} · Eff. {r.dateEffective || '—'}</div>
                             </div>
                           ))}
                         </div>
@@ -1033,6 +1038,45 @@ export default function App() {
                         <div className="text-xs text-gray-500 font-medium">Agriculture Variance</div>
                         <div className="text-2xl font-bold text-gray-900 mt-1">{comparisonResults.agriVariance}%</div>
                         <div className="text-xs text-gray-400 mt-0.5">relative gap</div>
+                      </div>
+                    </div>
+
+                    {/* Monthly & Annual estimates */}
+                    <div className="border-t border-gray-100 pt-4">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Projected Earnings (Non-Agriculture, 26 working days/month)</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs font-medium text-gray-500 border-b border-gray-100">
+                              <th className="text-left py-2 pr-4">Region</th>
+                              <th className="text-right py-2 px-3">Daily</th>
+                              <th className="text-right py-2 px-3">Monthly</th>
+                              <th className="text-right py-2 px-3">Annual (312d)</th>
+                              <th className="text-left py-2 pl-3">Wage Order</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {[
+                              { r: comparisonResults.r1, w: comparisonResults.w1 },
+                              { r: comparisonResults.r2, w: comparisonResults.w2 },
+                            ].map(({ r, w }, i) => (
+                              <tr key={i} className="text-sm">
+                                <td className="py-2.5 pr-4 font-medium text-gray-800 max-w-[200px] truncate">{r.name}</td>
+                                <td className="py-2.5 px-3 text-right font-semibold text-blue-700">₱{w.toLocaleString()}</td>
+                                <td className="py-2.5 px-3 text-right text-gray-700">₱{(w * 26).toLocaleString()}</td>
+                                <td className="py-2.5 px-3 text-right text-gray-700">₱{(w * 312).toLocaleString()}</td>
+                                <td className="py-2.5 pl-3 font-mono text-xs text-gray-400">{r.wageOrder.replace(/\s+[a-z]\/$/i, '')}</td>
+                              </tr>
+                            ))}
+                            <tr className="text-xs text-gray-500 bg-gray-50">
+                              <td className="py-2 pr-4 font-medium">Difference</td>
+                              <td className="py-2 px-3 text-right font-semibold text-gray-700">₱{comparisonResults.diff.toLocaleString()}</td>
+                              <td className="py-2 px-3 text-right">₱{(comparisonResults.diff * 26).toLocaleString()}</td>
+                              <td className="py-2 px-3 text-right">₱{(comparisonResults.diff * 312).toLocaleString()}</td>
+                              <td className="py-2 pl-3 text-gray-400">{comparisonResults.variance}% gap</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
