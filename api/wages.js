@@ -67,7 +67,7 @@ module.exports = async (req, res) => {
              ws.id as schedule_id, ws.wage_order, ws.date_effective, ws.pdf_url
       FROM regions r
       LEFT JOIN wage_schedules ws ON r.id = ws.region_id
-      ORDER BY r.sort_order ASC, ws.date_effective DESC
+      ORDER BY r.sort_order ASC, ws.date_effective DESC, (ws.source = 'nwpc_sync') DESC, ws.id DESC
     `);
 
     const [rates] = await pool.query(`
