@@ -237,9 +237,20 @@ export default function App() {
 
   const chartData = useMemo(() => {
     if (!wageData) return { labels: [], datasets: [] };
+    const shortLabel = (name: string) => {
+      if (name.includes('(NCR)')) return 'NCR';
+      if (name.includes('(CAR)')) return 'CAR';
+      if (name.includes('Extended Metro')) return 'IV-A (Metro)';
+      if (name.includes('1st Class')) return 'IV-A (1st Cl.)';
+      if (name.includes('2nd to 5th')) return 'IV-A (2nd-5th)';
+      if (name.includes('Aurora')) return 'III (Aurora)';
+      if (name.includes('Class A')) return 'VII (Class A)';
+      if (name.includes('Class B')) return 'VII (Class B)';
+      return name.replace(/\s*\(.*?\)\s*/g, '').trim() || name;
+    };
     const sorted = [...wageData.regions]
       .map(r => ({
-        name: r.name.replace(/\s*\(.*?\)\s*/g, '').trim() || r.name,
+        name: shortLabel(r.name),
         wage: getSectorRate(r, 'Non-Agriculture').current || 0
       }))
       .sort((a, b) => b.wage - a.wage)
@@ -665,12 +676,12 @@ export default function App() {
               ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-stretch">
               {/* Bar Chart */}
-              <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-5">
+              <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-5 flex flex-col">
                 <h3 className="text-sm font-semibold text-gray-900 mb-1">Top 10 Regions by Minimum Wage</h3>
-                <p className="text-xs text-gray-400 mb-5">Non-agriculture daily rate (₱)</p>
-                <div className="h-64">
+                <p className="text-xs text-gray-400 mb-4">Non-agriculture daily rate (₱)</p>
+                <div className="flex-1 min-h-[300px] relative">
                   <Bar
                     data={chartData}
                     options={{
@@ -910,8 +921,8 @@ export default function App() {
               <p className="text-sm text-gray-500 mt-0.5">Side-by-side wage comparison between any two regions</p>
             </div>
 
-            <div className="max-w-3xl">
-              <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-5">
+            <div className="w-full">
+              <div className="bg-white rounded-xl border border-gray-200 p-5 sm:p-6 space-y-6">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
                   <div className="flex-1">
                     <label className="block text-xs font-medium text-gray-500 mb-1.5">Region A</label>
@@ -960,44 +971,68 @@ export default function App() {
 
                 {comparisonResults && (
                   <div className="space-y-4 pt-3 border-t border-gray-100">
-                    {/* Non-Agriculture Cards */}
-                    <div>
-                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Non-Agriculture</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {[
-                          { r: comparisonResults.r1, w: comparisonResults.w1, barColor: 'bg-blue-600', boxClass: 'bg-blue-50 border-blue-100 text-blue-800' },
-                          { r: comparisonResults.r2, w: comparisonResults.w2, barColor: 'bg-indigo-600', boxClass: 'bg-indigo-50 border-indigo-100 text-indigo-800' },
-                        ].map(({ r, w, barColor, boxClass }, i) => (
-                          <div key={i} className={`p-4 rounded-xl border ${boxClass}`}>
-                            <div className="text-xs font-medium opacity-80 mb-1.5 truncate">{r.name}</div>
-                            <div className="text-3xl font-bold">₱{w}</div>
-                            <div className="w-full h-1.5 bg-white/70 rounded-full mt-3 overflow-hidden">
-                              <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.round((w / comparisonResults.maxWage) * 100)}%` }} />
+                    {/* Non-Agriculture & Agriculture Comparison */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2.5">Non-Agriculture Daily Rate</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {[
+                            { r: comparisonResults.r1, w: comparisonResults.w1, barColor: 'bg-blue-600', boxClass: 'bg-blue-50 border-blue-100 text-blue-800' },
+                            { r: comparisonResults.r2, w: comparisonResults.w2, barColor: 'bg-indigo-600', boxClass: 'bg-indigo-50 border-indigo-100 text-indigo-800' },
+                          ].map(({ r, w, barColor, boxClass }, i) => (
+                            <div key={i} className={`p-4 rounded-xl border ${boxClass}`}>
+                              <div className="text-xs font-medium opacity-80 mb-1.5 truncate" title={r.name}>{r.name}</div>
+                              <div className="text-3xl font-bold">₱{w}</div>
+                              <div className="w-full h-1.5 bg-white/70 rounded-full mt-3 overflow-hidden">
+                                <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.round((w / comparisonResults.maxWage) * 100)}%` }} />
+                              </div>
+                              <div className="text-[11px] text-gray-500 mt-2 font-mono">{r.wageOrder} · Eff. {r.dateEffective || '—'}</div>
                             </div>
-                            <div className="text-[11px] text-gray-500 mt-2 font-mono">{r.wageOrder} · Eff. {r.dateEffective || '—'}</div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2.5">Agriculture Daily Rate</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {[
+                            { r: comparisonResults.r1, w: comparisonResults.a1, barColor: 'bg-emerald-600', boxClass: 'bg-emerald-50/70 border-emerald-100 text-emerald-900' },
+                            { r: comparisonResults.r2, w: comparisonResults.a2, barColor: 'bg-teal-600', boxClass: 'bg-teal-50/70 border-teal-100 text-teal-900' },
+                          ].map(({ r, w, barColor, boxClass }, i) => (
+                            <div key={i} className={`p-4 rounded-xl border ${boxClass}`}>
+                              <div className="text-xs font-medium opacity-80 mb-1.5 truncate" title={r.name}>{r.name}</div>
+                              <div className="text-3xl font-bold">₱{w}</div>
+                              <div className="w-full h-1.5 bg-white/70 rounded-full mt-3 overflow-hidden">
+                                <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.round((w / comparisonResults.maxWage) * 100)}%` }} />
+                              </div>
+                              <div className="text-[11px] text-gray-500 mt-2 font-mono">{r.wageOrder} · Eff. {r.dateEffective || '—'}</div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Agriculture + Diff summary */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="text-xs text-gray-500 font-medium">Agriculture Gap</div>
-                        <div className="text-lg font-bold text-gray-900 mt-1">
-                          ₱{comparisonResults.a1} vs ₱{comparisonResults.a2}
-                        </div>
-                        <div className="text-xs text-gray-400 mt-0.5">Diff: ₱{comparisonResults.agriDiff} ({comparisonResults.agriVariance}%)</div>
-                      </div>
+                    {/* Variance summary */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                         <div className="text-xs text-gray-500 font-medium">Non-Agri Difference</div>
                         <div className="text-2xl font-bold text-gray-900 mt-1">₱{comparisonResults.diff}</div>
                         <div className="text-xs text-gray-400 mt-0.5">per day</div>
                       </div>
                       <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="text-xs text-gray-500 font-medium">Percentage Gap</div>
+                        <div className="text-xs text-gray-500 font-medium">Non-Agri Variance</div>
                         <div className="text-2xl font-bold text-gray-900 mt-1">{comparisonResults.variance}%</div>
-                        <div className="text-xs text-gray-400 mt-0.5">relative variance</div>
+                        <div className="text-xs text-gray-400 mt-0.5">relative gap</div>
+                      </div>
+                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="text-xs text-gray-500 font-medium">Agriculture Difference</div>
+                        <div className="text-2xl font-bold text-gray-900 mt-1">₱{comparisonResults.agriDiff}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">per day</div>
+                      </div>
+                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="text-xs text-gray-500 font-medium">Agriculture Variance</div>
+                        <div className="text-2xl font-bold text-gray-900 mt-1">{comparisonResults.agriVariance}%</div>
+                        <div className="text-xs text-gray-400 mt-0.5">relative gap</div>
                       </div>
                     </div>
                   </div>
@@ -1065,24 +1100,33 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {filteredMovements.map((m, i) => {
-                        const isPos = m.change > 0;
-                        const isNeg = m.change < 0;
+                        const hasChange = m.change !== null && m.changePercent !== null;
+                        const isPos = hasChange && m.change! > 0;
+                        const isNeg = hasChange && m.change! < 0;
                         return (
                           <tr key={i} className="hover:bg-gray-50 transition">
-                            <td className="py-3 px-5 font-medium text-gray-900 max-w-[180px]">{m.regionName}</td>
+                            <td className="py-3 px-5 font-medium text-gray-900 max-w-[200px]">{m.regionName}</td>
                             <td className="py-3 px-3 font-mono text-xs text-gray-400">{m.previousWageOrder}</td>
-                            <td className="py-3 px-3 text-right text-gray-400">₱{m.previousAmount.toLocaleString()}</td>
+                            <td className="py-3 px-3 text-right text-gray-400">
+                              {m.previousAmount !== null ? `₱${m.previousAmount.toLocaleString()}` : '—'}
+                            </td>
                             <td className="py-3 px-3 text-right font-semibold text-gray-900">₱{m.currentAmount.toLocaleString()}</td>
                             <td className="py-3 px-3 text-right">
-                              <span className={`font-semibold text-xs px-2 py-0.5 rounded ${
-                                isPos ? 'text-emerald-700 bg-emerald-50' :
-                                isNeg ? 'text-red-600 bg-red-50' :
-                                'text-gray-500 bg-gray-100'
-                              }`}>
-                                {isPos ? '+' : isNeg ? '-' : ''}₱{Math.abs(m.change)} ({isPos ? '+' : ''}{m.changePercent}%)
-                              </span>
+                              {hasChange ? (
+                                <span className={`font-semibold text-xs px-2 py-0.5 rounded ${
+                                  isPos ? 'text-emerald-700 bg-emerald-50' :
+                                  isNeg ? 'text-red-600 bg-red-50' :
+                                  'text-gray-500 bg-gray-100'
+                                }`}>
+                                  {isPos ? '+' : isNeg ? '-' : ''}₱{Math.abs(m.change!)} ({isPos ? '+' : ''}{m.changePercent}%)
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded font-medium">
+                                  {m.status}
+                                </span>
+                              )}
                             </td>
-                            <td className="py-3 px-3 text-xs text-gray-400">{m.currentEffectiveDate}</td>
+                            <td className="py-3 px-3 text-xs text-gray-400">{m.currentEffectiveDate || '—'}</td>
                             <td className="py-3 px-5 font-mono text-xs text-gray-500">{m.currentWageOrder}</td>
                           </tr>
                         );

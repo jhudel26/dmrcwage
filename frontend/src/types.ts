@@ -50,14 +50,14 @@ export interface RateMovement {
   regionName: string;
   sector: string;
   coverage: string;
-  previousAmount: number;
+  previousAmount: number | null;
   previousWageOrder: string;
   previousEffectiveDate: string;
   currentAmount: number;
   currentWageOrder: string;
   currentEffectiveDate: string;
-  change: number;
-  changePercent: number;
+  change: number | null;
+  changePercent: number | null;
   status: string;
 }
 

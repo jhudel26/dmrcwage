@@ -5,25 +5,26 @@ module.exports = async (req, res) => {
   const pool = getPool();
 
   try {
-    // 1. Multi-schedule comparisons (previous wage order -> current wage order)
+    // 1. All regions + their wage schedules & Non-Agriculture rates
     const [schedules] = await pool.query(`
       SELECT
+        r.id         AS region_id,
+        r.name       AS region_name,
+        r.sort_order,
         ws.id        AS schedule_id,
-        ws.region_id,
         ws.wage_order,
         ws.date_effective,
-        r.name       AS region_name,
         wr.id        AS rate_id,
         wr.single_amount,
         wr.single_coverage,
         (SELECT MAX(wt.amount) FROM wage_tranches wt WHERE wt.rate_id = wr.id) AS max_tranche
-      FROM wage_schedules ws
-      JOIN regions r  ON ws.region_id = r.id
-      JOIN wage_rates wr ON wr.schedule_id = ws.id AND wr.sector = 'Non-Agriculture'
-      ORDER BY ws.region_id, ws.date_effective DESC, ws.id DESC
+      FROM regions r
+      LEFT JOIN wage_schedules ws ON ws.region_id = r.id
+      LEFT JOIN wage_rates wr ON wr.schedule_id = ws.id AND wr.sector = 'Non-Agriculture'
+      ORDER BY r.sort_order ASC, ws.date_effective DESC, ws.id DESC
     `);
 
-    // 2. Multi-tranche comparisons (Tranche 1 -> Tranche 2 within an order)
+    // 2. Multi-tranche progressions (Tranche 1 -> Tranche 2 within an order)
     const [tranches] = await pool.query(`
       SELECT
         wt.rate_id,
@@ -39,83 +40,37 @@ module.exports = async (req, res) => {
       JOIN wage_rates wr ON wt.rate_id = wr.id AND wr.sector = 'Non-Agriculture'
       JOIN wage_schedules ws ON wr.schedule_id = ws.id
       JOIN regions r ON ws.region_id = r.id
-      ORDER BY ws.region_id, ws.id, wt.tranche_order ASC
+      ORDER BY r.sort_order ASC, ws.id, wt.tranche_order ASC
     `);
 
     const movements = [];
-    const seenKeys = new Set();
+    const regionsWithMovement = new Set();
     let totalIncreases = 0;
     let sumIncreasePercent = 0;
     const regionsChangedSet = new Set();
     let maxEffectiveDate = new Date('2020-01-01');
     const now = new Date();
+    const cleanOrder = (wo) => (wo || '—').replace(/\s+[a-z]\/$/i, '').trim();
 
-    const recordMovement = (m) => {
-      const key = `${m.regionId}:${m.previousAmount}->${m.currentAmount}:${m.currentEffectiveDate}`;
-      if (seenKeys.has(key) || m.change === 0) return;
-      seenKeys.add(key);
-
-      if (m.change > 0) {
-        totalIncreases++;
-        sumIncreasePercent += m.changePercent;
-        regionsChangedSet.add(m.regionId);
-      }
-      if (m.currentEffectiveDate) {
-        const effDate = new Date(m.currentEffectiveDate);
-        if (effDate > maxEffectiveDate && effDate <= now) maxEffectiveDate = effDate;
-      }
-      movements.push(m);
-    };
-
-    // Group schedules by region
-    const byRegion = {};
-    for (const s of schedules) {
-      if (!byRegion[s.region_id]) byRegion[s.region_id] = [];
-      byRegion[s.region_id].push(s);
-    }
-
-    for (const regionId of Object.keys(byRegion)) {
-      // Deduplicate schedules that represent the exact same rate & date (e.g. alias wage orders)
-      const unique = [];
-      for (const s of byRegion[regionId]) {
-        const amt = parseFloat(s.max_tranche || s.single_amount) || 0;
-        const dt = s.date_effective ? new Date(s.date_effective).toISOString().split('T')[0] : '';
-        if (!unique.some(u => u.amt === amt && u.dt === dt)) {
-          unique.push({ ...s, amt, dt });
-        }
-      }
-      if (unique.length >= 2) {
-        const curr = unique[0];
-        const prev = unique[1];
-        if (curr.amt > 0 && prev.amt > 0 && curr.amt !== prev.amt) {
-          const change = parseFloat((curr.amt - prev.amt).toFixed(2));
-          const changePercent = parseFloat(((change / prev.amt) * 100).toFixed(1));
-          recordMovement({
-            regionId,
-            regionName: curr.region_name,
-            sector: 'Non-Agriculture',
-            coverage: curr.single_coverage || '',
-            previousAmount: prev.amt,
-            previousWageOrder: prev.wage_order || '—',
-            previousEffectiveDate: prev.dt,
-            currentAmount: curr.amt,
-            currentWageOrder: curr.wage_order,
-            currentEffectiveDate: curr.dt,
-            change,
-            changePercent,
-            status: change > 0 ? 'Increased' : 'Decreased'
-          });
-        }
-      }
-    }
-
-    // Group tranches by rate_id and record Tranche 1 -> Tranche 2 movements
+    // Index tranches by rate_id
     const tranchesByRate = {};
     for (const t of tranches) {
       if (!tranchesByRate[t.rate_id]) tranchesByRate[t.rate_id] = [];
       tranchesByRate[t.rate_id].push(t);
     }
 
+    // Group schedules by region
+    const byRegion = {};
+    const regionOrder = [];
+    for (const s of schedules) {
+      if (!byRegion[s.region_id]) {
+        byRegion[s.region_id] = [];
+        regionOrder.push(s.region_id);
+      }
+      if (s.schedule_id) byRegion[s.region_id].push(s);
+    }
+
+    // First, add tranche-to-tranche movements for all multi-tranche regions
     for (const rateId of Object.keys(tranchesByRate)) {
       const list = tranchesByRate[rateId];
       if (list.length < 2) continue;
@@ -131,16 +86,26 @@ module.exports = async (req, res) => {
         const currDt = curr.effective_date ? new Date(curr.effective_date).toISOString().split('T')[0] : '';
         const prevDt = prev.effective_date ? new Date(prev.effective_date).toISOString().split('T')[0] : '';
 
-        recordMovement({
+        if (change > 0) {
+          totalIncreases++;
+          sumIncreasePercent += changePercent;
+          regionsChangedSet.add(curr.region_id);
+        }
+        if (currDt && new Date(currDt) <= now && new Date(currDt) > maxEffectiveDate) {
+          maxEffectiveDate = new Date(currDt);
+        }
+
+        regionsWithMovement.add(curr.region_id);
+        movements.push({
           regionId: curr.region_id,
           regionName: curr.region_name,
           sector: 'Non-Agriculture',
           coverage: curr.coverage || '',
           previousAmount: prevAmt,
-          previousWageOrder: `${curr.wage_order} (T${prev.tranche_order})`,
+          previousWageOrder: `${cleanOrder(curr.wage_order)} (T${prev.tranche_order})`,
           previousEffectiveDate: prevDt,
           currentAmount: currAmt,
-          currentWageOrder: `${curr.wage_order} (T${curr.tranche_order})`,
+          currentWageOrder: `${cleanOrder(curr.wage_order)} (T${curr.tranche_order})`,
           currentEffectiveDate: currDt,
           change,
           changePercent,
@@ -149,10 +114,84 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Sort movements: most recent effective date first, then largest change
+    // Next, check schedule-to-schedule movements & include all remaining regions as baseline
+    for (const regionId of regionOrder) {
+      const list = byRegion[regionId];
+      if (!list.length) continue;
+
+      const unique = [];
+      for (const s of list) {
+        const amt = parseFloat(s.max_tranche || s.single_amount) || 0;
+        const dt = s.date_effective ? new Date(s.date_effective).toISOString().split('T')[0] : '';
+        if (!unique.some(u => u.amt === amt && u.dt === dt)) {
+          unique.push({ ...s, amt, dt });
+        }
+      }
+
+      if (unique.length >= 2) {
+        const curr = unique[0];
+        const prev = unique[1];
+        if (curr.amt > 0 && prev.amt > 0 && curr.amt !== prev.amt) {
+          const change = parseFloat((curr.amt - prev.amt).toFixed(2));
+          const changePercent = parseFloat(((change / prev.amt) * 100).toFixed(1));
+          if (change > 0) {
+            totalIncreases++;
+            sumIncreasePercent += changePercent;
+            regionsChangedSet.add(regionId);
+          }
+          if (curr.dt && new Date(curr.dt) <= now && new Date(curr.dt) > maxEffectiveDate) {
+            maxEffectiveDate = new Date(curr.dt);
+          }
+          regionsWithMovement.add(regionId);
+          movements.push({
+            regionId,
+            regionName: curr.region_name,
+            sector: 'Non-Agriculture',
+            coverage: curr.single_coverage || '',
+            previousAmount: prev.amt,
+            previousWageOrder: cleanOrder(prev.wage_order),
+            previousEffectiveDate: prev.dt,
+            currentAmount: curr.amt,
+            currentWageOrder: cleanOrder(curr.wage_order),
+            currentEffectiveDate: curr.dt,
+            change,
+            changePercent,
+            status: change > 0 ? 'Increased' : 'Decreased'
+          });
+          continue;
+        }
+      }
+
+      // Include regions that don't have a prior schedule/tranche yet so all 23 regions are visible
+      if (!regionsWithMovement.has(regionId)) {
+        const curr = unique[0];
+        if (curr.dt && new Date(curr.dt) <= now && new Date(curr.dt) > maxEffectiveDate) {
+          maxEffectiveDate = new Date(curr.dt);
+        }
+        movements.push({
+          regionId,
+          regionName: curr.region_name,
+          sector: 'Non-Agriculture',
+          coverage: curr.single_coverage || '',
+          previousAmount: null,
+          previousWageOrder: '—',
+          previousEffectiveDate: '',
+          currentAmount: curr.amt,
+          currentWageOrder: cleanOrder(curr.wage_order),
+          currentEffectiveDate: curr.dt,
+          change: null,
+          changePercent: null,
+          status: 'Current Order'
+        });
+      }
+    }
+
+    // Sort: actual movements first (most recent date), then baseline regions
     movements.sort((a, b) => {
-      const dateDiff = new Date(b.currentEffectiveDate || 0).getTime() - new Date(a.currentEffectiveDate || 0).getTime();
-      return dateDiff !== 0 ? dateDiff : b.change - a.change;
+      const aHasChange = a.change !== null ? 1 : 0;
+      const bHasChange = b.change !== null ? 1 : 0;
+      if (aHasChange !== bHasChange) return bHasChange - aHasChange;
+      return new Date(b.currentEffectiveDate || 0).getTime() - new Date(a.currentEffectiveDate || 0).getTime();
     });
 
     const avgIncrease = totalIncreases > 0
