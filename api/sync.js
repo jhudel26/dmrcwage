@@ -32,8 +32,9 @@ module.exports = async (req, res) => {
   }
 
   const pool = getPool();
+  const force = req.query?.force === '1' || req.query?.force === 'true';
   try {
-    const result = await runSync(pool);
+    const result = await runSync(pool, { force });
     res.json({ success: true, timestamp: new Date(), ...result });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

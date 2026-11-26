@@ -21,7 +21,7 @@ export async function checkUpdates() {
 }
 
 export async function triggerNwpcSync(token: string) {
-  const res = await fetch(`${API_BASE}/sync`, {
+  const res = await fetch(`${API_BASE}/sync?force=1`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`
