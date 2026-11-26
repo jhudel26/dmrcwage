@@ -1,14 +1,15 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
+  "installCommand": "npm install && cd frontend && npm install",
+  "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
-    { "source": "/api/wages", "destination": "/api/wages" },
-    { "source": "/api/check-updates", "destination": "/api/check-updates" },
+    { "source": "/api/wages",          "destination": "/api/wages" },
+    { "source": "/api/check-updates",  "destination": "/api/check-updates" },
     { "source": "/api/rate-movements", "destination": "/api/rate-movements" },
-    { "source": "/api/auth/login", "destination": "/api/auth-login" },
-    { "source": "/api/sync", "destination": "/api/sync" },
-    { "source": "/api/health", "destination": "/api/health" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/auth/login",     "destination": "/api/auth-login" },
+    { "source": "/api/sync",           "destination": "/api/sync" },
+    { "source": "/api/health",         "destination": "/api/health" },
+    { "source": "/(.*)",               "destination": "/index.html" }
   ]
 }
