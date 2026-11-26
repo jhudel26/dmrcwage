@@ -829,38 +829,47 @@ export default function App() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">Wage Movement History</h3>
+                <span className="text-xs text-gray-400">{movementsData.movements.length} region comparisons</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
                       <th className="text-left py-3 px-5">Region</th>
-                      <th className="text-left py-3 px-3">Sector</th>
-                      <th className="text-right py-3 px-3">Previous</th>
-                      <th className="text-right py-3 px-3">Current</th>
+                      <th className="text-left py-3 px-3">Previous Order</th>
+                      <th className="text-right py-3 px-3">Prev. Rate</th>
+                      <th className="text-right py-3 px-3">Current Rate</th>
                       <th className="text-right py-3 px-3">Change</th>
                       <th className="text-left py-3 px-3">Effective</th>
-                      <th className="text-left py-3 px-5">Wage Order</th>
+                      <th className="text-left py-3 px-5">Current Order</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {movementsData.movements.map((m, i) => (
-                      <tr key={i} className="hover:bg-gray-50 transition">
-                        <td className="py-3 px-5 font-medium text-gray-900">{m.regionName}</td>
-                        <td className="py-3 px-3 text-xs text-gray-500">{m.sector}</td>
-                        <td className="py-3 px-3 text-right text-gray-400">₱{m.previousAmount}</td>
-                        <td className="py-3 px-3 text-right font-semibold text-gray-900">₱{m.currentAmount}</td>
-                        <td className="py-3 px-3 text-right">
-                          <span className="text-emerald-700 font-semibold text-xs bg-emerald-50 px-2 py-0.5 rounded">
-                            +₱{m.change} ({m.changePercent}%)
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-xs text-gray-400">{m.currentEffectiveDate}</td>
-                        <td className="py-3 px-5 font-mono text-xs text-gray-500">{m.currentWageOrder}</td>
-                      </tr>
-                    ))}
+                    {movementsData.movements.map((m, i) => {
+                      const isPos = m.change > 0;
+                      const isNeg = m.change < 0;
+                      return (
+                        <tr key={i} className="hover:bg-gray-50 transition">
+                          <td className="py-3 px-5 font-medium text-gray-900 max-w-[180px]">{m.regionName}</td>
+                          <td className="py-3 px-3 font-mono text-xs text-gray-400">{m.previousWageOrder}</td>
+                          <td className="py-3 px-3 text-right text-gray-400">₱{m.previousAmount.toLocaleString()}</td>
+                          <td className="py-3 px-3 text-right font-semibold text-gray-900">₱{m.currentAmount.toLocaleString()}</td>
+                          <td className="py-3 px-3 text-right">
+                            <span className={`font-semibold text-xs px-2 py-0.5 rounded ${
+                              isPos ? 'text-emerald-700 bg-emerald-50' :
+                              isNeg ? 'text-red-600 bg-red-50' :
+                              'text-gray-500 bg-gray-100'
+                            }`}>
+                              {isPos ? '+' : ''}{isNeg ? '' : ''}₱{Math.abs(m.change)} ({isPos ? '+' : ''}{m.changePercent}%)
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-xs text-gray-400">{m.currentEffectiveDate}</td>
+                          <td className="py-3 px-5 font-mono text-xs text-gray-500">{m.currentWageOrder}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
